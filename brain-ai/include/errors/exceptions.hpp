@@ -4,6 +4,7 @@
 #include <exception>
 #include <string>
 #include <sstream>
+#include <unordered_map>
 
 namespace brain_ai {
 namespace errors {
