@@ -18,7 +18,18 @@ if(NOT GTest_FOUND)
         test_main.cpp
     )
     
+    # New tests for v4.0.1 infrastructure
+    add_executable(brain_ai_monitoring_tests
+        test_monitoring.cpp
+    )
+    
+    add_executable(brain_ai_resilience_tests
+        test_resilience.cpp
+    )
+    
     target_link_libraries(brain_ai_tests PRIVATE brain_ai_lib)
+    target_link_libraries(brain_ai_monitoring_tests PRIVATE brain_ai_lib)
+    target_link_libraries(brain_ai_resilience_tests PRIVATE brain_ai_lib)
     
 else()
     message(STATUS "Google Test found - building with GTest")
@@ -43,3 +54,8 @@ endif()
 
 # Add tests to CTest
 add_test(NAME BrainAITests COMMAND brain_ai_tests)
+
+if(NOT GTest_FOUND)
+    add_test(NAME MonitoringTests COMMAND brain_ai_monitoring_tests)
+    add_test(NAME ResilienceTests COMMAND brain_ai_resilience_tests)
+endif()

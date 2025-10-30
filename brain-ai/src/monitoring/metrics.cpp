@@ -120,8 +120,8 @@ Histogram& MetricsRegistry::get_histogram(const std::string& name) {
     
     auto it = histograms_.find(name);
     if (it == histograms_.end()) {
-        histograms_.emplace(name, Histogram(10000));
-        it = histograms_.find(name);
+        // Use try_emplace to construct Histogram in-place without copy/move
+        it = histograms_.try_emplace(name, 10000).first;
     }
     return it->second;
 }
@@ -131,8 +131,8 @@ Timer& MetricsRegistry::get_timer(const std::string& name) {
     
     auto it = timers_.find(name);
     if (it == timers_.end()) {
-        timers_.emplace(name, Timer());
-        it = timers_.find(name);
+        // Use try_emplace to construct Timer in-place without copy/move
+        it = timers_.try_emplace(name).first;
     }
     return it->second;
 }
