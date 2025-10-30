@@ -186,7 +186,7 @@ private:
     brain_ai::monitoring::MetricsRegistry::instance().get_histogram(name).observe(value)
 
 #define METRICS_TIMER_SCOPE(name) \
-    brain_ai::monitoring::Timer::ScopedTimer _scoped_timer_##__LINE__( \
+    brain_ai::monitoring::Timer::ScopedTimer _scoped_timer_##__COUNTER__( \
         brain_ai::monitoring::MetricsRegistry::instance().get_timer(name))
 
 // Predefined metric names
