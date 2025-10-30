@@ -1,0 +1,43 @@
+Start testing: Oct 30 22:53 UTC
+----------------------------------------------------------
+1/1 Testing: BrainAITests
+1/1 Test: BrainAITests
+Command: "/home/user/webapp/brain-ai/build/tests/brain_ai_tests"
+Directory: /home/user/webapp/brain-ai/build/tests
+"BrainAITests" start time: Oct 30 22:53 UTC
+Output:
+----------------------------------------------------------
+Brain-AI v4.0 Test Suite
+============================================================
+
+All utils tests passed!
+✓ Utils Tests
+All episodic buffer tests passed!
+✓ Episodic Buffer Tests
+All semantic network tests passed!
+✓ Semantic Network Tests
+All hallucination detector tests passed!
+✓ Hallucination Detector Tests
+All hybrid fusion tests passed!
+✓ Hybrid Fusion Tests
+All explanation engine tests passed!
+✓ Explanation Engine Tests
+All cognitive handler tests passed!
+✓ Cognitive Handler Tests
+
+============================================================
+Test Summary:
+  Total:  7
+  Passed: 7 (100%)
+  Failed: 0
+============================================================
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"BrainAITests" end time: Oct 30 22:53 UTC
+"BrainAITests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Oct 30 22:53 UTC

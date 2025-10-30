@@ -1,0 +1,45 @@
+cmake_minimum_required(VERSION 3.15)
+
+# Find Google Test (if available)
+find_package(GTest QUIET)
+
+if(NOT GTest_FOUND)
+    message(STATUS "Google Test not found - tests will use simple assertions")
+    
+    # Create simple test runner without GTest
+    add_executable(brain_ai_tests
+        test_utils.cpp
+        test_episodic_buffer.cpp
+        test_semantic_network.cpp
+        test_hallucination_detector.cpp
+        test_hybrid_fusion.cpp
+        test_explanation_engine.cpp
+        test_cognitive_handler.cpp
+        test_main.cpp
+    )
+    
+    target_link_libraries(brain_ai_tests PRIVATE brain_ai_lib)
+    
+else()
+    message(STATUS "Google Test found - building with GTest")
+    
+    # Create test with GTest
+    add_executable(brain_ai_tests
+        gtest_utils.cpp
+        gtest_episodic_buffer.cpp
+        gtest_semantic_network.cpp
+        gtest_hallucination_detector.cpp
+        gtest_hybrid_fusion.cpp
+        gtest_explanation_engine.cpp
+        gtest_cognitive_handler.cpp
+    )
+    
+    target_link_libraries(brain_ai_tests PRIVATE 
+        brain_ai_lib
+        GTest::GTest
+        GTest::Main
+    )
+endif()
+
+# Add tests to CTest
+add_test(NAME BrainAITests COMMAND brain_ai_tests)
