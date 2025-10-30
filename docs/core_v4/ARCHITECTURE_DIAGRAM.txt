@@ -1,0 +1,614 @@
+# Brain-AI v4.0 Architecture Diagram
+
+## System Overview (High-Level)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         BRAIN-AI v4.0 COGNITIVE SYSTEM                       │
+│                                                                              │
+│  ┌────────────┐                                                             │
+│  │   Client   │                                                             │
+│  │ (gRPC/HTTP)│                                                             │
+│  └──────┬─────┘                                                             │
+│         │                                                                    │
+│         │ Query: "optimize manufacturing throughput"                        │
+│         │                                                                    │
+│         ▼                                                                    │
+│  ┌─────────────────────────────────────────────────────────────┐           │
+│  │            COGNITIVE QUERY HANDLER (Orchestrator)            │           │
+│  │                  (cognitive_handler.cpp)                     │           │
+│  └─────────────────────────────────────────────────────────────┘           │
+│         │                                                                    │
+│         ├──────────┬──────────┬──────────┬──────────┬──────────┐          │
+│         │          │          │          │          │          │          │
+│         ▼          ▼          ▼          ▼          ▼          ▼          │
+│  ┌──────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐    │
+│  │  Vector  │ │Episodic│ │Semantic│ │ Hybrid │ │Halluc. │ │Explain │    │
+│  │  Search  │ │ Buffer │ │Network │ │ Fusion │ │Detector│ │ Engine │    │
+│  │ (EXISTS) │ │  (NEW) │ │  (NEW) │ │  (NEW) │ │  (NEW) │ │  (NEW) │    │
+│  └──────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘    │
+│                                                                              │
+│                                  │                                          │
+│                                  ▼                                          │
+│                   Response: {results, context, explanation}                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Detailed Data Flow
+
+```
+INPUT QUERY
+    │
+    │ "optimize manufacturing throughput"
+    │
+    ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ STEP 1: QUERY PREPROCESSING                                       │
+│                                                                    │
+│  • Text normalization (lowercase, remove punctuation)             │
+│  • Tokenization                                                   │
+│  • Embedding generation (vector representation)                   │
+│                                                                    │
+│  Output: query_embedding [512-dim float vector]                   │
+└───────────────────────────────────────────────────────────────────┘
+    │
+    ├─────────────────┬─────────────────┬─────────────────┐
+    │                 │                 │                 │
+    ▼                 ▼                 ▼                 ▼
+┌─────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│STEP 2a:     │ │STEP 2b:      │ │STEP 2c:      │ │STEP 2d:      │
+│VECTOR SEARCH│ │EPISODIC      │ │SEMANTIC      │ │CONCEPT       │
+│             │ │RETRIEVAL     │ │ACTIVATION    │ │EXTRACTION    │
+│             │ │              │ │              │ │              │
+│ HNSWlib/    │ │ Ring buffer  │ │ Graph BFS    │ │ Keywords     │
+│ FAISS/      │ │ of recent    │ │ with decay   │ │ from query   │
+│ Qdrant/     │ │ conversations│ │              │ │              │
+│ SQLite      │ │              │ │              │ │              │
+│             │ │              │ │              │ │              │
+│ Finds 10    │ │ Finds 5 most │ │ Activates 8  │ │ Extracts:    │
+│ similar docs│ │ relevant past│ │ related      │ │ • optimize   │
+│ via cosine  │ │ episodes     │ │ concepts     │ │ • manufact   │
+│ similarity  │ │              │ │              │ │ • throughput │
+└──────┬──────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+       │                │                │                │
+       │                │                │                │
+       ▼                ▼                ▼                ▼
+  vector_results   episodic_context  semantic_concepts  concepts[]
+  [10 docs]        [5 episodes]      [8 concepts]       [3 keywords]
+       │                │                │                │
+       └────────────────┴────────────────┴────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ STEP 3: HYBRID FUSION                                             │
+│                                                                    │
+│  For each result from vector_search:                              │
+│    1. Get vector_score (cosine similarity)                        │
+│    2. Get episodic_score (relevance to past conversations)        │
+│    3. Get semantic_score (activation level from graph)            │
+│    4. Get recency_score (temporal decay)                          │
+│    5. Compute fused_confidence:                                   │
+│       = sigmoid(w1*vector + w2*episodic + w3*semantic + w4*recency│
+│                 + bias)                                            │
+│                                                                    │
+│  Default weights: w1=0.5, w2=0.2, w3=0.2, w4=0.1, bias=0.0       │
+│                                                                    │
+│  Output: Ranked results with fused confidence scores              │
+└───────────────────────────────────────────────────────────────────┘
+                        │
+                        ▼
+              fused_results [10 docs with confidences]
+                        │
+                        ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ STEP 4: HALLUCINATION DETECTION                                   │
+│                                                                    │
+│  For top result (or generated response):                          │
+│    1. Convert response to embedding                               │
+│    2. Search for supporting evidence in:                          │
+│       • vector_results (top-10 docs)                              │
+│       • episodic_context (past conversations)                     │
+│    3. Count evidence pieces with similarity > threshold (0.6)     │
+│    4. If count >= min_evidence (2): Valid ✓                       │
+│       Else: Invalid ✗ (apply confidence penalty)                  │
+│                                                                    │
+│  Output: ValidationResult {is_valid, confidence, evidence[]}      │
+└───────────────────────────────────────────────────────────────────┘
+                        │
+                        ▼
+           validation_result {valid=true, conf=0.87}
+                        │
+                        ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ STEP 5: EXPLANATION GENERATION                                    │
+│                                                                    │
+│  Generate human-readable reasoning trace:                         │
+│    1. "Found 10 similar documents in vector index (50%)"          │
+│    2. "Retrieved 2 relevant past conversations (20%)"             │
+│    3. "Activated 8 related concepts via semantic network (20%)"   │
+│    4. "Combined scores with learned weights"                      │
+│    5. "Validation passed: 5 pieces of supporting evidence (87%)"  │
+│                                                                    │
+│  Output: explanation (natural language text)                      │
+└───────────────────────────────────────────────────────────────────┘
+                        │
+                        ▼
+            explanation "Query: ... Reasoning: ..."
+                        │
+                        ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ STEP 6: RESPONSE CONSTRUCTION                                     │
+│                                                                    │
+│  Build API response:                                              │
+│    • results: Top-10 ranked documents                             │
+│    • episodic_context: Past conversations used                    │
+│    • semantic_concepts: Activated concepts                        │
+│    • validation: Hallucination detection result                   │
+│    • explanation: Reasoning trace                                 │
+│    • metrics: Latency breakdown                                   │
+└───────────────────────────────────────────────────────────────────┘
+                        │
+                        ▼
+                  JSON/Protobuf Response
+                        │
+                        ▼
+                     Client
+```
+
+---
+
+## Component Interaction Matrix
+
+```
+┌──────────────┬─────────┬────────┬────────┬────────┬────────┬────────┐
+│ Component    │ Vector  │Episodic│Semantic│ Fusion │Halluc. │Explain │
+│              │ Search  │ Buffer │Network │        │Detector│ Engine │
+├──────────────┼─────────┼────────┼────────┼────────┼────────┼────────┤
+│Vector Search │    -    │   No   │   No   │  Yes   │  Yes   │  Yes   │
+│Episodic Buf  │   No    │   -    │   No   │  Yes   │  Yes   │  Yes   │
+│Semantic Net  │   No    │   No   │   -    │  Yes   │   No   │  Yes   │
+│Fusion        │  Yes    │  Yes   │  Yes   │   -    │   No   │  Yes   │
+│Halluc. Det.  │  Yes    │  Yes   │   No   │   No   │   -    │  Yes   │
+│Explain Eng.  │  Yes    │  Yes   │  Yes   │  Yes   │  Yes   │   -    │
+└──────────────┴─────────┴────────┴────────┴────────┴────────┴────────┘
+
+Legend:
+  Yes = Component A uses/depends on Component B
+  No  = No direct dependency
+  -   = Self (diagonal)
+```
+
+---
+
+## Memory Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     MEMORY STRUCTURE                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ VECTOR INDEX (~2GB)                                       │  │
+│  │   • 2.35M items × 512-dim embeddings                      │  │
+│  │   • HNSWlib/FAISS/Qdrant backend                          │  │
+│  │   • Persistent storage (disk-backed)                      │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ EPISODIC BUFFER (~10MB)                                   │  │
+│  │   • 128 episodes (ring buffer)                            │  │
+│  │   • Each episode: ~80KB                                   │  │
+│  │     - query text (~1KB)                                   │  │
+│  │     - response text (~1KB)                                │  │
+│  │     - query_embedding (512 × 4 bytes = 2KB)               │  │
+│  │     - metadata (~100 bytes)                               │  │
+│  │   • In-memory (fast access)                               │  │
+│  │   • Periodic persistence to disk (optional)               │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ SEMANTIC NETWORK (~50MB)                                  │  │
+│  │   • 1000 nodes                                            │  │
+│  │   • Each node: ~50KB                                      │  │
+│  │     - concept string (~100 bytes)                         │  │
+│  │     - embedding (512 × 4 bytes = 2KB)                     │  │
+│  │     - edges (avg 5 edges × 100 bytes = 500 bytes)         │  │
+│  │     - activation level (4 bytes)                          │  │
+│  │   • 5000 edges total                                      │  │
+│  │   • In-memory (graph traversal performance)               │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ FUSION WEIGHTS (<1KB)                                     │  │
+│  │   • 5 floats (20 bytes)                                   │  │
+│  │   • Default or learned weights                            │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ PER-QUERY BUFFERS (~1MB)                                  │  │
+│  │   • Temporary embeddings                                  │  │
+│  │   • Intermediate results                                  │  │
+│  │   • Reasoning traces                                      │  │
+│  │   • Released after query completes                        │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  TOTAL MEMORY: ~2.5GB                                           │
+│    • Vector index: 2GB (disk-backed, can be mmap)              │
+│    • Episodic: 10MB (in-memory)                                │
+│    • Semantic: 50MB (in-memory)                                │
+│    • Per-query: 1MB × N concurrent queries                     │
+│                                                                  │
+│  For 100 concurrent queries: 2.5GB + 100MB = 2.6GB             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Latency Breakdown (Target)
+
+```
+Total Query Latency: <50ms p95
+
+┌─────────────────────────────────────────────────────────────┐
+│                     LATENCY WATERFALL                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  0ms  ┌────────────────────────────────────────────────┐   │
+│       │ Query Reception + Parsing                      │   │
+│  1ms  └────────────────────────────────────────────────┘   │
+│       │                                                     │
+│       │ ┌──────────────────────────────────────────────┐   │
+│       │ │ Embedding Generation (reuse existing)       │   │
+│  3ms  │ └──────────────────────────────────────────────┘   │
+│       │                                                     │
+│       ├─────────┬──────────┬──────────┬─────────┐         │
+│       │         │          │          │         │         │
+│       ▼         ▼          ▼          ▼         ▼         │
+│  ┌────────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐         │
+│  │Vector  │ │Epis  │ │Seman │ │Concep│ │(Para  │         │
+│  │Search  │ │Retr  │ │Activ │ │Extrac│ │llel)  │         │
+│  │        │ │ieval │ │ation │ │tion  │ │       │         │
+│  │  10ms  │ │  8ms │ │  5ms │ │  1ms │ │       │         │
+│  └────────┘ └──────┘ └──────┘ └──────┘ └──────┘         │
+│       │                                                     │
+│ 13ms  │ (Parallel execution, max=10ms)                     │
+│       │                                                     │
+│       ▼                                                     │
+│       ┌────────────────────────────────────────────────┐   │
+│       │ Fusion (combine scores)                        │   │
+│ 14ms  └────────────────────────────────────────────────┘   │
+│       │                                                     │
+│       ▼                                                     │
+│       ┌────────────────────────────────────────────────┐   │
+│       │ Hallucination Detection                        │   │
+│ 19ms  └────────────────────────────────────────────────┘   │
+│       │                                                     │
+│       ▼                                                     │
+│       ┌────────────────────────────────────────────────┐   │
+│       │ Explanation Generation                         │   │
+│ 20ms  └────────────────────────────────────────────────┘   │
+│       │                                                     │
+│       ▼                                                     │
+│       ┌────────────────────────────────────────────────┐   │
+│       │ Response Serialization                         │   │
+│ 22ms  └────────────────────────────────────────────────┘   │
+│                                                              │
+│  Total: 22ms typical, 43ms p95, 89ms p99                    │
+└─────────────────────────────────────────────────────────────┘
+
+OPTIMIZATION OPPORTUNITIES:
+  • Parallel execution: Vector + Episodic + Semantic (saves ~8ms)
+  • Caching: Frequent queries cached (saves ~20ms)
+  • Batch processing: Multiple queries together (amortizes overhead)
+```
+
+---
+
+## Threading Model
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     THREADING ARCHITECTURE                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │ MAIN THREAD (gRPC Server)                                  │ │
+│  │   • Accept incoming connections                            │ │
+│  │   • Dispatch to thread pool                                │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │ THREAD POOL (Worker Threads)                               │ │
+│  │   • N threads (default: num_cores)                         │ │
+│  │   • Each thread handles one query                          │ │
+│  │   • Thread-safe data structures:                           │ │
+│  │     - Vector index (read-only, thread-safe)                │ │
+│  │     - Episodic buffer (mutex or thread-local)              │ │
+│  │     - Semantic network (read-only, thread-safe)            │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌──────────┬──────────┬──────────┬──────────┐                │
+│  │ Worker 1 │ Worker 2 │ Worker 3 │ Worker N │                │
+│  │  Query A │  Query B │  Query C │  Query Z │                │
+│  └──────────┴──────────┴──────────┴──────────┘                │
+│                                                                  │
+│  THREAD SAFETY:                                                 │
+│    • Vector index: Read-only (no locking needed)               │
+│    • Episodic buffer: std::mutex (short critical section)      │
+│    • Semantic network: Read-only during query (activations in  │
+│      per-query buffer, not shared)                             │
+│    • Fusion weights: Read-only (loaded at startup)             │
+│    • Hallucination detector: Stateless (thread-safe)           │
+│    • Explanation engine: Per-query instance (thread-local)     │
+│                                                                  │
+│  SCALABILITY:                                                   │
+│    • Single-node: 500+ QPS (4 cores)                           │
+│    • Multi-node: Horizontal scaling via load balancer         │
+│    • Shared state: Episodic buffer per session (sticky        │
+│      sessions or Redis-backed)                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## API Flow (gRPC)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       gRPC API FLOW                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  CLIENT                     SERVER                               │
+│    │                          │                                  │
+│    │ CognitiveSearchRequest   │                                  │
+│    ├─────────────────────────>│                                  │
+│    │                          │                                  │
+│    │                          │ Parse request                    │
+│    │                          │ Extract: query, top_k, session_id│
+│    │                          │                                  │
+│    │                          │ Call CognitiveHandler            │
+│    │                          │   .process_query(request)        │
+│    │                          │                                  │
+│    │                          │ ┌─────────────────────────┐     │
+│    │                          │ │ Vector Search           │     │
+│    │                          │ │ Episodic Retrieval      │     │
+│    │                          │ │ Semantic Activation     │     │
+│    │                          │ │ Fusion                  │     │
+│    │                          │ │ Hallucination Detection │     │
+│    │                          │ │ Explanation Generation  │     │
+│    │                          │ └─────────────────────────┘     │
+│    │                          │                                  │
+│    │                          │ Build response                   │
+│    │                          │                                  │
+│    │ CognitiveSearchResponse  │                                  │
+│    │<─────────────────────────┤                                  │
+│    │                          │                                  │
+│    │ Parse response           │                                  │
+│    │ Display results          │                                  │
+│    │                          │                                  │
+│    ▼                          ▼                                  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+REQUEST:
+{
+  "query": "optimize manufacturing throughput",
+  "top_k": 10,
+  "use_episodic": true,
+  "use_semantic": true,
+  "use_hallucination_detection": true,
+  "include_explanation": true,
+  "session_id": "user123_session456"
+}
+
+RESPONSE:
+{
+  "results": [...],              // Top-10 ranked documents
+  "episodic_context": [...],     // Past conversations
+  "semantic_concepts": [...],    // Activated concepts
+  "validation": {...},           // Hallucination result
+  "explanation": "...",          // Reasoning trace
+  "metrics": {...}               // Performance breakdown
+}
+```
+
+---
+
+## Error Handling
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       ERROR HANDLING FLOW                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  TRY {                                                           │
+│    1. Parse request                                              │
+│       └─> Error: INVALID_ARGUMENT (400)                         │
+│                                                                  │
+│    2. Validate inputs                                            │
+│       └─> Error: INVALID_ARGUMENT (400)                         │
+│                                                                  │
+│    3. Vector search                                              │
+│       └─> Error: UNAVAILABLE (503) - Backend down               │
+│                                                                  │
+│    4. Episodic retrieval                                         │
+│       └─> Error: INTERNAL (500) - Buffer corrupted              │
+│           Fallback: Skip episodic, continue with other sources  │
+│                                                                  │
+│    5. Semantic activation                                        │
+│       └─> Error: INTERNAL (500) - Graph error                   │
+│           Fallback: Skip semantic, continue with other sources  │
+│                                                                  │
+│    6. Fusion                                                     │
+│       └─> Error: INTERNAL (500) - Math error                    │
+│           Fallback: Use vector-only scores                      │
+│                                                                  │
+│    7. Hallucination detection                                    │
+│       └─> Error: INTERNAL (500) - Validation error              │
+│           Fallback: Skip validation, flag as uncertain          │
+│                                                                  │
+│    8. Explanation generation                                     │
+│       └─> Error: INTERNAL (500) - Formatting error              │
+│           Fallback: Return empty explanation                    │
+│                                                                  │
+│    9. Response construction                                      │
+│       └─> Error: INTERNAL (500) - Serialization error           │
+│                                                                  │
+│  } CATCH (Exception e) {                                         │
+│    • Log error (structured JSON)                                │
+│    • Increment error metric                                     │
+│    • Return gRPC error status                                   │
+│  }                                                               │
+│                                                                  │
+│  GRACEFUL DEGRADATION:                                           │
+│    • If episodic fails: Use vector + semantic only              │
+│    • If semantic fails: Use vector + episodic only              │
+│    • If both fail: Fallback to vector-only (baseline)           │
+│    • Always try to return SOMETHING (partial results better     │
+│      than total failure)                                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Deployment Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  KUBERNETES DEPLOYMENT                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ LOAD BALANCER (Ingress)                                    │ │
+│  │   • Round-robin across pods                                │ │
+│  │   • Health checks (HTTP /health endpoint)                  │ │
+│  │   • TLS termination                                        │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ BRAIN-AI PODS (Replicas: 3)                                │ │
+│  │                                                             │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │ │
+│  │  │   Pod 1      │  │   Pod 2      │  │   Pod 3      │    │ │
+│  │  │              │  │              │  │              │    │ │
+│  │  │  Container:  │  │  Container:  │  │  Container:  │    │ │
+│  │  │  brain-ai:v4 │  │  brain-ai:v4 │  │  brain-ai:v4 │    │ │
+│  │  │              │  │              │  │              │    │ │
+│  │  │  Resources:  │  │  Resources:  │  │  Resources:  │    │ │
+│  │  │  CPU: 2      │  │  CPU: 2      │  │  CPU: 2      │    │ │
+│  │  │  MEM: 4GB    │  │  MEM: 4GB    │  │  MEM: 4GB    │    │ │
+│  │  │              │  │              │  │              │    │ │
+│  │  │  Ports:      │  │  Ports:      │  │  Ports:      │    │ │
+│  │  │  50051 gRPC  │  │  50051 gRPC  │  │  50051 gRPC  │    │ │
+│  │  │  8080 HTTP   │  │  8080 HTTP   │  │  8080 HTTP   │    │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘    │ │
+│  │         │                  │                  │            │ │
+│  │         └──────────────────┴──────────────────┘            │ │
+│  │                            │                                │ │
+│  │                            ▼                                │ │
+│  │  ┌────────────────────────────────────────────────────┐   │ │
+│  │  │ PERSISTENT VOLUME (Shared Storage)                 │   │ │
+│  │  │   • Vector index (2GB)                             │   │ │
+│  │  │   • Episodic buffers (10MB per session)            │   │ │
+│  │  │   • Semantic network (50MB)                        │   │ │
+│  │  │   • Logs                                           │   │ │
+│  │  └────────────────────────────────────────────────────┘   │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ MONITORING STACK                                            │ │
+│  │                                                             │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │ │
+│  │  │ Prometheus   │  │ Grafana      │  │ Elasticsearch│    │ │
+│  │  │ (Metrics)    │  │ (Dashboards) │  │ (Logs)       │    │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘    │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+SCALING:
+  • Horizontal: kubectl scale deployment/brain-ai-v4 --replicas=10
+  • Vertical: Increase CPU/memory limits in deployment.yaml
+  • Autoscaling: HorizontalPodAutoscaler based on CPU/QPS metrics
+```
+
+---
+
+## Testing Strategy Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     TESTING PYRAMID                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│                          ▲                                       │
+│                         ╱ ╲                                      │
+│                        ╱   ╲                                     │
+│                       ╱     ╲                                    │
+│                      ╱  E2E  ╲                                   │
+│                     ╱  (10)   ╲                                  │
+│                    ╱───────────╲                                 │
+│                   ╱             ╲                                │
+│                  ╱               ╲                               │
+│                 ╱  INTEGRATION   ╲                               │
+│                ╱      (20)        ╲                              │
+│               ╱───────────────────╲                              │
+│              ╱                     ╲                             │
+│             ╱                       ╲                            │
+│            ╱       UNIT (75)         ╲                           │
+│           ╱─────────────────────────── ╲                         │
+│                                                                  │
+│  UNIT TESTS (75):                                                │
+│    • EpisodicBuffer (10 tests)                                  │
+│    • SemanticNetwork (15 tests)                                 │
+│    • HybridFusion (10 tests)                                    │
+│    • HallucinationDetector (10 tests)                           │
+│    • ExplanationEngine (8 tests)                                │
+│    • Utils (cosine similarity, etc.) (22 tests)                 │
+│                                                                  │
+│  INTEGRATION TESTS (20):                                         │
+│    • Multi-turn conversation (3 tests)                          │
+│    • Episodic + Vector integration (2 tests)                    │
+│    • Semantic + Vector integration (2 tests)                    │
+│    • Fusion + All sources (3 tests)                             │
+│    • Hallucination detection pipeline (5 tests)                 │
+│    • Explanation generation pipeline (3 tests)                  │
+│    • Error handling & fallbacks (2 tests)                       │
+│                                                                  │
+│  E2E TESTS (10):                                                 │
+│    • Full cognitive pipeline (1 test)                           │
+│    • Performance regression (1 test)                            │
+│    • Load testing (1000 queries) (1 test)                       │
+│    • Multi-session isolation (1 test)                           │
+│    • Persistence (save/load) (1 test)                           │
+│    • Docker deployment (1 test)                                 │
+│    • Kubernetes deployment (1 test)                             │
+│    • API compatibility (gRPC + HTTP) (2 tests)                  │
+│    • Monitoring (metrics + logs) (1 test)                       │
+│                                                                  │
+│  TOTAL: 105 tests                                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Summary
+
+This architecture provides:
+- ✅ **Validated foundation** (C++ vector search, TRL 6-7)
+- ✅ **Cognitive enhancements** (5 proven concepts)
+- ✅ **Production performance** (<50ms, 500+ QPS)
+- ✅ **Scalability** (horizontal + vertical)
+- ✅ **Observability** (metrics + logs + traces)
+- ✅ **Safety** (hallucination detection, graceful degradation)
+- ✅ **Transparency** (explanations, reasoning traces)
+
+**You're ready to build this.**
+
+Next: Read CPP_CODE_EXAMPLES.md for detailed implementation patterns.
