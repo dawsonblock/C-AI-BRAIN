@@ -162,43 +162,49 @@ std::string get_timestamp();
 // Convenience macros for logging
 #define LOG_TRACE(logger, msg) \
     do { \
+        const auto& _log_msg = (msg); \
         if ((logger)->should_log(brain_ai::logging::LogLevel::TRACE)) { \
-            (logger)->trace(msg, __FILE__, __LINE__, __FUNCTION__); \
+            (logger)->trace(_log_msg, __FILE__, __LINE__, __FUNCTION__); \
         } \
     } while(0)
 
 #define LOG_DEBUG(logger, msg) \
     do { \
+        const auto& _log_msg = (msg); \
         if ((logger)->should_log(brain_ai::logging::LogLevel::DEBUG)) { \
-            (logger)->debug(msg, __FILE__, __LINE__, __FUNCTION__); \
+            (logger)->debug(_log_msg, __FILE__, __LINE__, __FUNCTION__); \
         } \
     } while(0)
 
 #define LOG_INFO(logger, msg) \
     do { \
+        const auto& _log_msg = (msg); \
         if ((logger)->should_log(brain_ai::logging::LogLevel::INFO)) { \
-            (logger)->info(msg, __FILE__, __LINE__, __FUNCTION__); \
+            (logger)->info(_log_msg, __FILE__, __LINE__, __FUNCTION__); \
         } \
     } while(0)
 
 #define LOG_WARN(logger, msg) \
     do { \
+        const auto& _log_msg = (msg); \
         if ((logger)->should_log(brain_ai::logging::LogLevel::WARN)) { \
-            (logger)->warn(msg, __FILE__, __LINE__, __FUNCTION__); \
+            (logger)->warn(_log_msg, __FILE__, __LINE__, __FUNCTION__); \
         } \
     } while(0)
 
 #define LOG_ERROR(logger, msg) \
     do { \
+        const auto& _log_msg = (msg); \
         if ((logger)->should_log(brain_ai::logging::LogLevel::ERROR)) { \
-            (logger)->error(msg, __FILE__, __LINE__, __FUNCTION__); \
+            (logger)->error(_log_msg, __FILE__, __LINE__, __FUNCTION__); \
         } \
     } while(0)
 
 #define LOG_FATAL(logger, msg) \
     do { \
+        const auto& _log_msg = (msg); \
         if ((logger)->should_log(brain_ai::logging::LogLevel::FATAL)) { \
-            (logger)->fatal(msg, __FILE__, __LINE__, __FUNCTION__); \
+            (logger)->fatal(_log_msg, __FILE__, __LINE__, __FUNCTION__); \
         } \
     } while(0)
 
