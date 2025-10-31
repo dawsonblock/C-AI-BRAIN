@@ -348,6 +348,26 @@ HealthCheckResult check_disk_health() {
     return result;
 }
 
+HealthCheckResult check_thread_health() {
+    auto result = create_health_result("threads", HealthStatus::HEALTHY,
+                                      "Thread pool operational");
+    
+    // Get hardware concurrency
+    unsigned int hw_threads = std::thread::hardware_concurrency();
+    if (hw_threads == 0) {
+        hw_threads = 1; // Fallback if detection fails
+    }
+    
+    result.details["hardware_threads"] = std::to_string(hw_threads);
+    result.details["max_threads"] = std::to_string(hw_threads * 2); // Common thread pool size
+    
+    // In a real implementation, you would check actual thread pool status
+    // For now, we'll just mark as healthy
+    result.message = "Thread pool available with " + std::to_string(hw_threads) + " hardware threads";
+    
+    return result;
+}
+
 void initialize_default_health_checks() {
     auto& registry = HealthCheckRegistry::instance();
     

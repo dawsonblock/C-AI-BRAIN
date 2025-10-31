@@ -7,7 +7,7 @@ using namespace brain_ai;
 void test_cognitive_handler() {
     // Test initialization
     {
-        CognitiveHandler handler(64);
+        CognitiveHandler handler(64, FusionWeights(), 4);
         
         assert(handler.episodic_buffer_size() == 0 && "Buffer should be empty initially");
         assert(handler.semantic_network_size() == 0 && "Network should be empty initially");
@@ -15,7 +15,7 @@ void test_cognitive_handler() {
     
     // Test populate semantic network
     {
-        CognitiveHandler handler;
+        CognitiveHandler handler(128, FusionWeights(), 2);
         
         std::vector<std::pair<std::string, std::vector<float>>> concepts = {
             {"concept1", {1.0f, 0.0f}},
@@ -33,7 +33,11 @@ void test_cognitive_handler() {
     
     // Test process query
     {
-        CognitiveHandler handler;
+        CognitiveHandler handler(128, FusionWeights(), 4);
+        
+        // Add some documents to the index first
+        handler.index_document("doc1", {1.0f, 0.0f, 0.0f, 0.0f}, "Test document 1");
+        handler.index_document("doc2", {0.0f, 1.0f, 0.0f, 0.0f}, "Test document 2");
         
         std::vector<float> query_emb = {1.0f, 0.0f, 0.0f, 0.0f};
         
@@ -46,7 +50,7 @@ void test_cognitive_handler() {
     
     // Test add episode
     {
-        CognitiveHandler handler;
+        CognitiveHandler handler(128, FusionWeights(), 3);
         
         std::vector<float> emb = {1.0f, 0.0f, 0.0f};
         
@@ -61,9 +65,12 @@ void test_cognitive_handler() {
     
     // Test query with episodic memory
     {
-        CognitiveHandler handler;
+        CognitiveHandler handler(128, FusionWeights(), 4);
         
         std::vector<float> emb = {1.0f, 0.0f, 0.0f, 0.0f};
+        
+        // Add some documents to the index
+        handler.index_document("doc1", emb, "Document content");
         
         // Add episode
         handler.add_episode("previous query", "previous response", emb);
@@ -77,9 +84,12 @@ void test_cognitive_handler() {
     
     // Test query configuration
     {
-        CognitiveHandler handler;
+        CognitiveHandler handler(128, FusionWeights(), 4);
         
         std::vector<float> emb = {1.0f, 0.0f, 0.0f, 0.0f};
+        
+        // Add document to index
+        handler.index_document("doc1", emb, "Test content");
         
         QueryConfig config;
         config.use_episodic = false;

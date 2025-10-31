@@ -41,7 +41,8 @@ class CognitiveHandler {
 public:
     CognitiveHandler(
         size_t episodic_capacity = 128,
-        const FusionWeights& fusion_weights = FusionWeights()
+        const FusionWeights& fusion_weights = FusionWeights(),
+        size_t embedding_dim = 1536
     );
     
     // Process a query through the full cognitive pipeline
@@ -96,6 +97,7 @@ private:
     HybridFusion fusion_;
     ExplanationEngine explanation_engine_;
     std::unique_ptr<vector_search::HNSWIndex> vector_index_;
+    size_t embedding_dim_;
     
     // Real vector search using HNSWlib
     std::vector<ScoredResult> vector_search(

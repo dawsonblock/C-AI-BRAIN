@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(BrainAI VERSION 4.2.0 LANGUAGES CXX)
+project(BrainAI VERSION 4.3.0 LANGUAGES CXX)
 
 # C++17 required
 set(CMAKE_CXX_STANDARD 17)
@@ -96,6 +96,9 @@ set(BRAIN_AI_SOURCES
     src/document/ocr_client.cpp
     src/document/text_validator.cpp
     src/document/document_processor.cpp
+    
+    # Enhanced indexing (v4.3.0 - Phase 5)
+    src/indexing/index_manager.cpp
 )
 
 # Create library
