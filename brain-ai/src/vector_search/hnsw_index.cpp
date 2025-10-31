@@ -103,10 +103,11 @@ void HNSWIndex::normalize_vector(std::vector<float>& vec) const {
 }
 
 float HNSWIndex::ip_to_similarity(float ip_distance) const {
-    // HNSWlib returns negative inner product as distance
-    // For normalized vectors, cosine similarity = inner product
-    // Convert to [0, 1] range where 1 is most similar
-    return (-ip_distance + 1.0f) / 2.0f;
+    // For normalized vectors, hnswlib's InnerProductSpace distance is 1.0 - InnerProduct.
+    // The inner product is the cosine similarity.
+    // So, similarity = 1.0 - distance.
+    // The result is in [-1, 1]; we can clamp it to [0, 1] as similarity is often expected to be non-negative.
+    return std::max(0.0f, 1.0f - ip_distance);
 }
 
 bool HNSWIndex::add_document(const std::string& doc_id,
