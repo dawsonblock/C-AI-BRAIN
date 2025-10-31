@@ -101,8 +101,9 @@ set(BRAIN_AI_SOURCES
     src/indexing/index_manager.cpp
 )
 
-# Create library
+# Create library (with -fPIC for Python binding compatibility)
 add_library(brain_ai_lib STATIC ${BRAIN_AI_SOURCES})
+set_target_properties(brain_ai_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(brain_ai_lib PUBLIC 
     Threads::Threads 
     nlohmann_json::nlohmann_json
@@ -113,6 +114,21 @@ target_link_libraries(brain_ai_lib PUBLIC
 # Main executable (demo)
 add_executable(brain_ai_demo src/main.cpp)
 target_link_libraries(brain_ai_demo PRIVATE brain_ai_lib)
+
+# Python bindings module
+option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
+if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
+    pybind11_add_module(brain_ai_py bindings/brain_ai_bindings.cpp)
+    target_link_libraries(brain_ai_py PRIVATE brain_ai_lib)
+    
+    # Install Python module
+    install(TARGETS brain_ai_py
+            LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/python)
+    
+    message(STATUS "Python bindings enabled - building brain_ai_py module")
+else()
+    message(STATUS "Python bindings disabled or pybind11 not found")
+endif()
 
 # Tests
 if(BUILD_TESTS)

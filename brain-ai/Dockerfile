@@ -33,8 +33,8 @@ WORKDIR /app/build
 RUN cmake -DCMAKE_BUILD_TYPE=Release .. && \
     make -j$(nproc)
 
-# Run tests
-RUN ctest --output-on-failure || true
+# Run tests (ENFORCED - build fails if tests fail)
+RUN ctest --output-on-failure
 
 # Create data directories
 RUN mkdir -p /app/data/episodic /app/data/semantic
