@@ -3,7 +3,8 @@ import torch
 import os
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+# Respect pre-configured CUDA visibility; set a safe default only if not set.
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
 
 model_name = 'deepseek-ai/DeepSeek-OCR'
