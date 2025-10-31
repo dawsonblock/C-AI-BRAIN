@@ -8,7 +8,6 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 # from typing import Optional, Dict, Any
 import logging
 import time
-import io
 from datetime import datetime
 
 # Configure logging
