@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/brain_ai_demo.dir/link.d"
   "CMakeFiles/brain_ai_demo.dir/src/main.cpp.o"
   "CMakeFiles/brain_ai_demo.dir/src/main.cpp.o.d"
   "brain_ai_demo"

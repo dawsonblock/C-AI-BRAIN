@@ -1,0 +1,1 @@
+/usr/bin/c++  -O3 -march=native -DNDEBUG -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/brain_ai_monitoring_tests.dir/link.d CMakeFiles/brain_ai_monitoring_tests.dir/test_monitoring.cpp.o -o brain_ai_monitoring_tests  ../libbrain_ai_lib.a

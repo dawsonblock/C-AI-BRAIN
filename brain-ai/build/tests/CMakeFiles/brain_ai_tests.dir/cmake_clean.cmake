@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/brain_ai_tests.dir/link.d"
   "CMakeFiles/brain_ai_tests.dir/test_cognitive_handler.cpp.o"
   "CMakeFiles/brain_ai_tests.dir/test_cognitive_handler.cpp.o.d"
   "CMakeFiles/brain_ai_tests.dir/test_episodic_buffer.cpp.o"

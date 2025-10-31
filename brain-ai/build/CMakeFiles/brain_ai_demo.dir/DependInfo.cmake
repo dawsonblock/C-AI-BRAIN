@@ -8,12 +8,16 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/user/webapp/brain-ai/src/main.cpp" "CMakeFiles/brain_ai_demo.dir/src/main.cpp.o" "gcc" "CMakeFiles/brain_ai_demo.dir/src/main.cpp.o.d"
+  "/home/runner/work/C-AI-BRAIN/C-AI-BRAIN/brain-ai/src/main.cpp" "CMakeFiles/brain_ai_demo.dir/src/main.cpp.o" "gcc" "CMakeFiles/brain_ai_demo.dir/src/main.cpp.o.d"
+  "" "brain_ai_demo" "gcc" "CMakeFiles/brain_ai_demo.dir/link.d"
   )
 
-# Targets to which this target links.
-set(CMAKE_TARGET_LINKED_INFO_FILES
-  "/home/user/webapp/brain-ai/build/CMakeFiles/brain_ai_lib.dir/DependInfo.cmake"
+# Targets to which this target links which contain Fortran sources.
+set(CMAKE_Fortran_TARGET_LINKED_INFO_FILES
+  )
+
+# Targets to which this target links which contain Fortran sources.
+set(CMAKE_Fortran_TARGET_FORWARD_LINKED_INFO_FILES
   )
 
 # Fortran module output directory.
