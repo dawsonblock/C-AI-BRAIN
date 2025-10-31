@@ -16,13 +16,37 @@ namespace monitoring {
 // HealthCheckResult Implementation
 // ============================================================================
 
+namespace {
+inline std::string json_escape(const std::string& s) {
+    std::ostringstream o;
+    for (char c : s) {
+        switch (c) {
+            case '\"': o << "\\\""; break;
+            case '\\': o << "\\\\"; break;
+            case '\b': o << "\\b"; break;
+            case '\f': o << "\\f"; break;
+            case '\n': o << "\\n"; break;
+            case '\r': o << "\\r"; break;
+            case '\t': o << "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    o << "\\u" << std::hex << std::setw(4) << std::setfill('0') << (int)(unsigned char)c;
+                } else {
+                    o << c;
+                }
+        }
+    }
+    return o.str();
+}
+}
+
 std::string HealthCheckResult::to_json() const {
     std::ostringstream oss;
     
     oss << "{\n";
-    oss << "  \"component\": \"" << component_name << "\",\n";
+    oss << "  \"component\": \"" << json_escape(component_name) << "\",\n";
     oss << "  \"status\": \"" << health_status_to_string(status) << "\",\n";
-    oss << "  \"message\": \"" << message << "\",\n";
+    oss << "  \"message\": \"" << json_escape(message) << "\",\n";
     oss << "  \"check_duration_ms\": " << check_duration_ms << ",\n";
     oss << "  \"timestamp\": \"" << std::chrono::system_clock::to_time_t(timestamp) << "\"";
     
@@ -31,7 +55,7 @@ std::string HealthCheckResult::to_json() const {
         bool first = true;
         for (const auto& [key, value] : details) {
             if (!first) oss << ",\n";
-            oss << "    \"" << key << "\": \"" << value << "\"";
+            oss << "    \"" << json_escape(key) << "\": \"" << json_escape(value) << "\"";
             first = false;
         }
         oss << "\n  }";
