@@ -126,9 +126,10 @@ if __name__ == "__main__":
     #     ]
     #     batch_inputs.extend(cache_list)
 
+    from itertools import repeat
     with ThreadPoolExecutor(max_workers=NUM_WORKERS) as executor:  
         batch_inputs = list(tqdm(
-            executor.map(process_single_image, images),
+            executor.map(process_single_image, images, repeat(prompt)),
             total=len(images),
             desc="Pre-processed images"
         ))
