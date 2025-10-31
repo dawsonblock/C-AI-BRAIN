@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(BrainAI VERSION 4.0.1 LANGUAGES CXX)
+project(BrainAI VERSION 4.1.0 LANGUAGES CXX)
 
 # C++17 required
 set(CMAKE_CXX_STANDARD 17)
@@ -27,8 +27,28 @@ endif()
 # Find packages
 find_package(Threads REQUIRED)
 
+# Fetch dependencies (header-only libraries)
+include(FetchContent)
+
+# nlohmann_json for JSON support
+FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+)
+FetchContent_MakeAvailable(json)
+
+# hnswlib for vector search
+FetchContent_Declare(
+    hnswlib
+    GIT_REPOSITORY https://github.com/nmslib/hnswlib.git
+    GIT_TAG        v0.8.0
+)
+FetchContent_MakeAvailable(hnswlib)
+
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${hnswlib_SOURCE_DIR})
 
 # Verify required source files exist to prevent opaque build errors
 foreach(_src
@@ -58,11 +78,14 @@ set(BRAIN_AI_SOURCES
     src/monitoring/health.cpp
     src/logging/logger.cpp
     src/resilience/circuit_breaker.cpp
+    
+    # Vector search integration (v4.1.0)
+    src/vector_search/hnsw_index.cpp
 )
 
 # Create library
 add_library(brain_ai_lib STATIC ${BRAIN_AI_SOURCES})
-target_link_libraries(brain_ai_lib PUBLIC Threads::Threads)
+target_link_libraries(brain_ai_lib PUBLIC Threads::Threads nlohmann_json::nlohmann_json)
 
 # Main executable (demo)
 add_executable(brain_ai_demo src/main.cpp)

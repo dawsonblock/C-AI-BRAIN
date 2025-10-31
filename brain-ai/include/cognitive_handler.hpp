@@ -6,6 +6,7 @@
 #include "hallucination_detector.hpp"
 #include "hybrid_fusion.hpp"
 #include "explanation_engine.hpp"
+#include "vector_search/hnsw_index.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -58,6 +59,19 @@ public:
         const std::unordered_map<std::string, std::string>& metadata = {}
     );
     
+    // Index a document for vector search
+    bool index_document(
+        const std::string& doc_id,
+        const std::vector<float>& embedding,
+        const std::string& content,
+        const nlohmann::json& metadata = {}
+    );
+    
+    // Batch index documents
+    void batch_index_documents(
+        const std::vector<std::tuple<std::string, std::vector<float>, std::string>>& documents
+    );
+    
     // Populate semantic network with domain knowledge
     void populate_semantic_network(
         const std::vector<std::pair<std::string, std::vector<float>>>& concepts,
@@ -68,10 +82,12 @@ public:
     EpisodicBuffer& episodic_buffer() { return episodic_buffer_; }
     SemanticNetwork& semantic_network() { return semantic_network_; }
     HybridFusion& fusion() { return fusion_; }
+    vector_search::HNSWIndex& vector_index() { return *vector_index_; }
     
     // Statistics
     size_t episodic_buffer_size() const { return episodic_buffer_.size(); }
     size_t semantic_network_size() const { return semantic_network_.num_nodes(); }
+    size_t vector_index_size() const { return vector_index_->size(); }
     
 private:
     EpisodicBuffer episodic_buffer_;
@@ -79,8 +95,9 @@ private:
     HallucinationDetector hallucination_detector_;
     HybridFusion fusion_;
     ExplanationEngine explanation_engine_;
+    std::unique_ptr<vector_search::HNSWIndex> vector_index_;
     
-    // Simulated vector search (placeholder - real implementation would use actual vector DB)
+    // Real vector search using HNSWlib
     std::vector<ScoredResult> vector_search(
         const std::vector<float>& query_embedding,
         size_t top_k
