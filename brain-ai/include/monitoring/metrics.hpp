@@ -59,31 +59,34 @@ private:
 // Gauge metric - can increase or decrease
 class Gauge {
 public:
-    Gauge() : value_(0) {}
+    Gauge() : value_(0.0) {}
     
     void set(double val) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        value_ = val;
+        value_.store(val, std::memory_order_relaxed);
     }
     
     void increment(double delta = 1.0) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        value_ += delta;
+        // fetch_add is not available for float/double, so use a CAS loop
+        double current = value_.load(std::memory_order_relaxed);
+        while (!value_.compare_exchange_weak(current, current + delta, std::memory_order_relaxed)) {
+            // The loop continues if another thread modified 'current'
+        }
     }
     
     void decrement(double delta = 1.0) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        value_ -= delta;
+        // fetch_sub is not available for float/double, so use a CAS loop
+        double current = value_.load(std::memory_order_relaxed);
+        while (!value_.compare_exchange_weak(current, current - delta, std::memory_order_relaxed)) {
+            // The loop continues if another thread modified 'current'
+        }
     }
     
     double value() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return value_;
+        return value_.load(std::memory_order_relaxed);
     }
     
 private:
-    mutable std::mutex mutex_;
-    double value_;
+    std::atomic<double> value_;
 };
 
 // Histogram - tracks distribution of values
