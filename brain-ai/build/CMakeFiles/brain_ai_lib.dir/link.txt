@@ -1,2 +1,0 @@
-/usr/bin/ar qc libbrain_ai_lib.a CMakeFiles/brain_ai_lib.dir/src/utils.cpp.o CMakeFiles/brain_ai_lib.dir/src/episodic_buffer.cpp.o CMakeFiles/brain_ai_lib.dir/src/semantic_network.cpp.o CMakeFiles/brain_ai_lib.dir/src/hallucination_detector.cpp.o CMakeFiles/brain_ai_lib.dir/src/hybrid_fusion.cpp.o CMakeFiles/brain_ai_lib.dir/src/explanation_engine.cpp.o CMakeFiles/brain_ai_lib.dir/src/cognitive_handler.cpp.o
-/usr/bin/ranlib libbrain_ai_lib.a
