@@ -163,7 +163,8 @@ fi
 test_start "Query Processing"
 
 # Mock embedding (in production, this would come from an embedding service)
-MOCK_EMBEDDING='[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]'
+# Generate a 1536-dimensional vector for testing
+MOCK_EMBEDDING=$(python -c "print(str([0.1] * 1536).replace(' ', ''))")
 
 if response=$(curl -s -f -X POST "$REST_SERVICE/api/v1/query" \
     -H "Content-Type: application/json" \
