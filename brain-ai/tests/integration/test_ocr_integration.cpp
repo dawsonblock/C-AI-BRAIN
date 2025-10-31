@@ -412,7 +412,6 @@ bool test_service_timeout() {
 
 bool test_configuration_updates() {
     OCRConfig config;
-    OCRConfig config;
     config.service_url = OCR_SERVICE_URL;
     config.mode = "tiny";
     
