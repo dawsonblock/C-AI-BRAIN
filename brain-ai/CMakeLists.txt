@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(BrainAI VERSION 4.0.0 LANGUAGES CXX)
+project(BrainAI VERSION 4.0.1 LANGUAGES CXX)
 
 # C++17 required
 set(CMAKE_CXX_STANDARD 17)
@@ -30,8 +30,21 @@ find_package(Threads REQUIRED)
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
+# Verify required source files exist to prevent opaque build errors
+foreach(_src
+    src/monitoring/metrics.cpp
+    src/monitoring/health.cpp
+    src/logging/logger.cpp
+    src/resilience/circuit_breaker.cpp
+)
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/${_src}")
+        message(FATAL_ERROR "Required source file not found: ${_src}")
+    endif()
+endforeach()
+
 # Source files
 set(BRAIN_AI_SOURCES
+    # Core components
     src/utils.cpp
     src/episodic_buffer.cpp
     src/semantic_network.cpp
@@ -39,6 +52,12 @@ set(BRAIN_AI_SOURCES
     src/hybrid_fusion.cpp
     src/explanation_engine.cpp
     src/cognitive_handler.cpp
+    
+    # Production infrastructure (v4.0.1)
+    src/monitoring/metrics.cpp
+    src/monitoring/health.cpp
+    src/logging/logger.cpp
+    src/resilience/circuit_breaker.cpp
 )
 
 # Create library
