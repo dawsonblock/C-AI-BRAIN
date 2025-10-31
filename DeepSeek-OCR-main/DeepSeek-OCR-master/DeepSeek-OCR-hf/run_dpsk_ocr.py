@@ -11,7 +11,12 @@ model_name = 'deepseek-ai/DeepSeek-OCR'
 
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 model = AutoModel.from_pretrained(model_name, _attn_implementation='flash_attention_2', trust_remote_code=True, use_safetensors=True)
-model = model.eval().cuda().to(torch.bfloat16)
+model = model.eval()
+if torch.cuda.is_available():
+    model = model.cuda().to(torch.bfloat16)
+else:
+    # Fallback to CPU; bfloat16 may not be supported on all CPUs, so use float32
+    model = model.to(torch.float32)
 
 
 
