@@ -29,26 +29,23 @@ bool BrainAIServiceImpl::start() {
         return false;
     }
     
-    std::cout << "[BrainAIService] Starting server at " 
+    std::cout << "[BrainAIService] Starting server at "
               << config_.server_address << "..." << std::endl;
-    
-    // TODO: Implement gRPC server startup once protobuf is compiled
-    // This would involve:
-    // 1. grpc::ServerBuilder builder;
-    // 2. builder.AddListeningPort(config_.server_address, grpc::InsecureServerCredentials());
-    // 3. builder.RegisterService(this);
-    // 4. server_ = builder.BuildAndStart();
-    
-    running_.store(true);
-    
-    std::cout << "[BrainAIService] Server started successfully" << std::endl;
-    std::cout << "[BrainAIService] Listening on " << config_.server_address << std::endl;
-    
-    if (config_.enable_reflection) {
-        std::cout << "[BrainAIService] gRPC reflection enabled" << std::endl;
-    }
-    
-    return true;
+
+    // TODO: Implement gRPC server startup once protobuf is compiled.
+    // For now, fail fast to avoid falsely reporting a running server.
+    std::cerr << "[BrainAIService] gRPC server not implemented yet. Startup aborted." << std::endl;
+    return false;
+
+    // When implemented:
+    // grpc::ServerBuilder builder;
+    // builder.AddListeningPort(config_.server_address, grpc::InsecureServerCredentials());
+    // builder.RegisterService(this);
+    // server_ = builder.BuildAndStart();
+    // if (!server_) return false;
+    // running_.store(true);
+    // if (config_.enable_reflection) { /* enable reflection */ }
+    // return true;
 }
 
 void BrainAIServiceImpl::stop() {
