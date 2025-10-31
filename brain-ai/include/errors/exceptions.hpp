@@ -173,8 +173,7 @@ private:
     std::string field_;
 };
 
-#include <map> // Add this include at the top of the file
-
+// Error builder for detailed error messages
 class ErrorBuilder {
 public:
     ErrorBuilder() = default;
@@ -213,8 +212,7 @@ public:
 private:
     std::string message_;
     std::string component_;
-    std::map<std::string, std::string> details_;
-};
+    std::unordered_map<std::string, std::string> details_;
 };
 
 // Helper macros for throwing exceptions

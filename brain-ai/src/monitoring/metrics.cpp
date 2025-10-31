@@ -105,34 +105,36 @@ MetricsRegistry& MetricsRegistry::instance() {
     return registry;
 }
 
-Counter& MetricsRegistry::get_counter(const std::string& name) {
+Counter& MetricsRegistry::get_counter(std::string_view name) {
     std::lock_guard<std::mutex> lock(mutex_);
-    return counters_[name];
+    return counters_[std::string(name)];
 }
 
-Gauge& MetricsRegistry::get_gauge(const std::string& name) {
+Gauge& MetricsRegistry::get_gauge(std::string_view name) {
     std::lock_guard<std::mutex> lock(mutex_);
-    return gauges_[name];
+    return gauges_[std::string(name)];
 }
 
-Histogram& MetricsRegistry::get_histogram(const std::string& name) {
+Histogram& MetricsRegistry::get_histogram(std::string_view name) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    auto it = histograms_.find(name);
+    std::string key(name);
+    auto it = histograms_.find(key);
     if (it == histograms_.end()) {
         // Use try_emplace to construct Histogram in-place without copy/move
-        it = histograms_.try_emplace(name, 10000).first;
+        it = histograms_.try_emplace(key, 10000).first;
     }
     return it->second;
 }
 
-Timer& MetricsRegistry::get_timer(const std::string& name) {
+Timer& MetricsRegistry::get_timer(std::string_view name) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    auto it = timers_.find(name);
+    std::string key(name);
+    auto it = timers_.find(key);
     if (it == timers_.end()) {
         // Use try_emplace to construct Timer in-place without copy/move
-        it = timers_.try_emplace(name).first;
+        it = timers_.try_emplace(key).first;
     }
     return it->second;
 }

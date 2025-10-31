@@ -1,1 +1,0 @@
-/usr/bin/c++  -O3 -march=native -DNDEBUG -O3 -DNDEBUG CMakeFiles/brain_ai_demo.dir/src/main.cpp.o -o brain_ai_demo  libbrain_ai_lib.a 

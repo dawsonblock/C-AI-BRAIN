@@ -1,0 +1,41 @@
+# Build directories
+build/
+**/build/
+
+# Compiled Object files
+*.o
+*.obj
+
+# Compiled Static libraries
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+brain_ai_demo
+brain_ai_tests
+brain_ai_monitoring_tests
+brain_ai_resilience_tests
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+Testing/
+
+# Logs
+*.log
+logs/
