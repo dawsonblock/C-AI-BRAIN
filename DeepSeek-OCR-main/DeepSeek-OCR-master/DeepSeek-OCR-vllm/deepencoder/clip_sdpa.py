@@ -26,7 +26,6 @@ from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
 # try:
 #     from einops import rearrange
 # except ImportError:
-#     rearrange = None
 
 # from flash_attn import flash_attn_varlen_func as flash_attn_unpadded_func
 
