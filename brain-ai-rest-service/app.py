@@ -34,6 +34,11 @@ SERVICE_INFO = {
 }
 
 # Statistics tracking
+import threading
+
+# ... (other imports)
+
+# Statistics tracking
 stats = {
     "total_documents": 0,
     "successful_documents": 0,
@@ -44,7 +49,7 @@ stats = {
     "total_document_time_ms": 0,
     "total_query_time_ms": 0
 }
-
+stats_lock = threading.Lock()
 # ==================== Request/Response Models ====================
 
 class OCRConfig(BaseModel):
