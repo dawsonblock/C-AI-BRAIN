@@ -278,17 +278,17 @@ pip install -r requirements.txt
 
 ```bash
 python app.py
-# Service runs on http://localhost:5000
+# Service runs on http://localhost:5001
 ```
 
 ### Test Endpoints
 
 ```bash
 # Health check
-curl http://localhost:5000/api/v1/health
+curl http://localhost:5001/api/v1/health
 
 # Process document
-curl -X POST http://localhost:5000/api/v1/documents/process \
+curl -X POST http://localhost:5001/api/v1/documents/process \
   -H "Content-Type: application/json" \
   -d '{
     "doc_id": "test_001",
@@ -300,7 +300,7 @@ curl -X POST http://localhost:5000/api/v1/documents/process \
   }'
 
 # Query
-curl -X POST http://localhost:5000/api/v1/query \
+curl -X POST http://localhost:5001/api/v1/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "test query",
@@ -322,7 +322,7 @@ For now, we'll implement a Python-only version that simulates the C++ backend un
 ## Configuration
 
 Environment variables:
-- `REST_SERVICE_PORT`: Service port (default: 5000)
+- `REST_SERVICE_PORT`: Service port (default: 5001)
 - `OCR_SERVICE_URL`: OCR service URL (default: http://localhost:8000)
 - `LOG_LEVEL`: Logging level (default: info)
 - `MAX_WORKERS`: Number of worker threads (default: 4)

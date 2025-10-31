@@ -47,7 +47,7 @@ cd deepseek-ocr-service
 pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8000
 
-# Terminal 2: Start REST API (port 5000)
+# Terminal 2: Start REST API (port 5001)
 cd brain-ai-rest-service
 pip install -r requirements.txt
 python app.py
@@ -147,7 +147,7 @@ Brain-AI is a **production-ready C++ cognitive architecture** that combines vect
              │ HTTP/JSON
              ▼
 ┌────────────────────────────────────────────────────────────────┐
-│              Brain-AI REST API (Port 5000)                      │
+│              Brain-AI REST API (Port 5001)                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │  • Query Processing      • Document Processing           │  │
 │  │  • Batch Operations      • Health Checks                 │  │
@@ -340,7 +340,7 @@ curl -X POST http://localhost:8000/ocr/extract \
 
 **Purpose**: Provide HTTP/JSON interface to all Brain-AI functionality
 
-**Base URL**: `http://localhost:5000/api/v1`
+**Base URL**: `http://localhost:5001/api/v1`
 
 **11 Endpoints**:
 
@@ -359,7 +359,7 @@ curl -X POST http://localhost:8000/ocr/extract \
 
 **Example: Process Document**:
 ```bash
-curl -X POST http://localhost:5000/api/v1/documents/process \
+curl -X POST http://localhost:5001/api/v1/documents/process \
   -H "Content-Type: application/json" \
   -d '{
     "doc_id": "doc_001",
@@ -371,7 +371,7 @@ curl -X POST http://localhost:5000/api/v1/documents/process \
 
 **Example: Query Processing**:
 ```bash
-curl -X POST http://localhost:5000/api/v1/query \
+curl -X POST http://localhost:5001/api/v1/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "What are the key findings?",
@@ -586,7 +586,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000 \
 
 # REST API (multi-worker)
 cd brain-ai-rest-service
-uvicorn app:app --host 0.0.0.0 --port 5000 \
+uvicorn app:app --host 0.0.0.0 --port 5001 \
   --workers 4 --log-level info
 ```
 
@@ -748,7 +748,7 @@ services:
     depends_on:
       - ocr-service
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3

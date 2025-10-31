@@ -40,7 +40,7 @@ Total:               28/28  (100%) ✅
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │              Brain-AI REST API Service                       │
-│                   (FastAPI :5000)                           │
+│                   (FastAPI :5001)                           │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │ Endpoints:                                            │  │
 │  │  • /api/v1/documents/process (single + batch)        │  │
@@ -142,7 +142,7 @@ OCR Integration Tests: 10/10 PASS ✅
 ### 2. **Brain-AI REST API Service** ✅ (Phase 2)
 
 **Status**: ✅ Fully Operational  
-**Port**: 5000  
+**Port**: 5001  
 **Technology**: FastAPI + Python + Pydantic
 
 #### Features:
@@ -427,7 +427,7 @@ python app.py
 # Terminal 2: Start REST API Service
 cd /home/user/webapp/brain-ai-rest-service
 python app.py
-# Runs on http://localhost:5000
+# Runs on http://localhost:5001
 ```
 
 ### Run Tests
@@ -453,10 +453,10 @@ cd /home/user/webapp
 ```bash
 # Health checks
 curl http://localhost:8000/health
-curl http://localhost:5000/api/v1/health
+curl http://localhost:5001/api/v1/health
 
 # Process document
-curl -X POST http://localhost:5000/api/v1/documents/process \
+curl -X POST http://localhost:5001/api/v1/documents/process \
   -H "Content-Type: application/json" \
   -d '{
     "doc_id": "test_001",
@@ -464,7 +464,7 @@ curl -X POST http://localhost:5000/api/v1/documents/process \
   }'
 
 # Query system
-curl -X POST http://localhost:5000/api/v1/query \
+curl -X POST http://localhost:5001/api/v1/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "What is AI?",
@@ -485,7 +485,7 @@ import json
 
 # Base URLs
 OCR_SERVICE = "http://localhost:8000"
-REST_SERVICE = "http://localhost:5000"
+REST_SERVICE = "http://localhost:5001"
 
 # Process document
 def process_document(file_path, doc_id):
@@ -529,7 +529,7 @@ print(f"Confidence: {query_result['confidence']}")
 
 ```bash
 # Batch document processing
-curl -X POST http://localhost:5000/api/v1/documents/batch \
+curl -X POST http://localhost:5001/api/v1/documents/batch \
   -H "Content-Type: application/json" \
   -d '{
     "documents": [
@@ -539,7 +539,7 @@ curl -X POST http://localhost:5000/api/v1/documents/batch \
   }'
 
 # Vector search
-curl -X POST http://localhost:5000/api/v1/search \
+curl -X POST http://localhost:5001/api/v1/search \
   -H "Content-Type: application/json" \
   -d '{
     "query_embedding": [0.1, 0.2, ...],
@@ -548,7 +548,7 @@ curl -X POST http://localhost:5000/api/v1/search \
   }'
 
 # Add episode to memory
-curl -X POST http://localhost:5000/api/v1/episodes \
+curl -X POST http://localhost:5001/api/v1/episodes \
   -H "Content-Type: application/json" \
   -d '{
     "query": "User question",
@@ -557,7 +557,7 @@ curl -X POST http://localhost:5000/api/v1/episodes \
   }'
 
 # Get statistics
-curl http://localhost:5000/api/v1/stats | jq '.'
+curl http://localhost:5001/api/v1/stats | jq '.'
 ```
 
 ---
@@ -672,7 +672,7 @@ tail -f brain-ai-rest-service/rest_service.log
 ```bash
 # Check all services
 curl http://localhost:8000/health && \
-curl http://localhost:5000/api/v1/health
+curl http://localhost:5001/api/v1/health
 ```
 
 ### Run Tests

@@ -16,12 +16,13 @@ endif()
 # Options
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_GRPC_SERVICE "Build gRPC service" ON)
-option(USE_SANITIZERS "Enable address and thread sanitizers" OFF)
+option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
+option(USE_SANITIZERS "Enable address and undefined sanitizers" ON)
 
-# Sanitizers (for development)
+# Sanitizers (for development/CI)
 if(USE_SANITIZERS)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,thread,undefined")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address,thread,undefined")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined -fno-omit-frame-pointer")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address,undefined")
 endif()
 
 # Find packages
@@ -54,6 +55,20 @@ FetchContent_Declare(
     GIT_TAG        v0.15.3
 )
 FetchContent_MakeAvailable(httplib)
+
+# pybind11 for Python bindings
+if(BUILD_PYTHON_BINDINGS)
+    find_package(pybind11 CONFIG QUIET)
+    if(NOT pybind11_FOUND)
+        message(STATUS "pybind11 not found, fetching...")
+        FetchContent_Declare(
+            pybind11
+            GIT_REPOSITORY https://github.com/pybind/pybind11.git
+            GIT_TAG        v2.11.1
+        )
+        FetchContent_MakeAvailable(pybind11)
+    endif()
+endif()
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -118,6 +133,17 @@ target_link_libraries(brain_ai_demo PRIVATE brain_ai_lib)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Python bindings (pybind11)
+if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
+    pybind11_add_module(brain_ai_py bindings/brain_ai_bindings.cpp)
+    target_link_libraries(brain_ai_py PRIVATE brain_ai_lib)
+    message(STATUS "✅ Python bindings enabled")
+    
+    # Install Python module
+    install(TARGETS brain_ai_py
+            LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/python)
 endif()
 
 # gRPC service (optional)

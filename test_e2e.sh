@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 
 # Service URLs
 OCR_SERVICE="http://localhost:8000"
-REST_SERVICE="http://localhost:5000"
+REST_SERVICE="http://localhost:5001"
 
 # Test counters
 TESTS_TOTAL=0

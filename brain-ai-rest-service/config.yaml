@@ -1,0 +1,172 @@
+# Brain-AI RAG++ Configuration
+# Complete configuration for RAG++ system with multi-agent orchestration
+
+# Service Configuration
+service:
+  host: "0.0.0.0"
+  port: 5001
+  log_level: "INFO"
+  timeout: 60
+
+# C++ Backend
+cpp_backend:
+  enabled: true
+  episodic_capacity: 128
+  embedding_dim: 1536  # OpenAI ada-002 / text-embedding-3-small
+  fusion_weights:
+    vector: 0.4
+    episodic: 0.3
+    semantic: 0.3
+
+# Retrieval Configuration
+retrieval:
+  # Vector search
+  vector_search:
+    top_k: 50
+    ef_search: 50
+    
+  # Re-ranking
+  reranker:
+    enabled: true
+    model: "cross-encoder/ms-marco-MiniLM-L-6-v2"  # 80MB, fast
+    # alternatives:
+    # - cross-encoder/ms-marco-MiniLM-L-12-v2  # 120MB, better
+    # - cross-encoder/ms-marco-TinyBERT-L-2-v2  # 17MB, fastest
+    rerank_top_k: 10
+    
+  # Chunking
+  chunker:
+    chunk_size: 400  # tokens
+    overlap: 50      # tokens
+    min_chunk_size: 100
+    max_chunk_size: 500
+
+# Facts Store (Canonical Q/A triples)
+facts_store:
+  enabled: true
+  db_path: "data/facts.db"
+  confidence_threshold: 0.85  # Only store high-confidence facts
+  cleanup:
+    enabled: true
+    min_access_count: 1
+    max_age_days: 90
+
+# LLM Configuration (DeepSeek)
+llm:
+  provider: "deepseek"
+  api_key_env: "DEEPSEEK_API_KEY"
+  base_url: "https://api.deepseek.com"
+  
+  # Model routing
+  router:
+    enabled: true
+    reasoning_model: "deepseek-reasoner"  # R1 for complex reasoning
+    chat_model: "deepseek-chat"           # V3/32B for retrieval
+    
+  # Generation parameters
+  generation:
+    temperature: 0.0
+    max_tokens: 2048
+    top_p: 1.0
+    
+  # Retry configuration
+  retry:
+    max_retries: 3
+    timeout: 60
+    backoff_base: 2
+
+# Evidence and Refusal
+evidence:
+  threshold: 0.7  # Minimum confidence to answer
+  refuse_below_threshold: true
+  cite_first: true
+
+# Multi-Agent Orchestration
+multi_agent:
+  enabled: true
+  n_solvers: 3
+  verification_threshold: 0.85
+  max_rounds: 1
+  enable_early_stop: true
+  
+  # Planner configuration
+  planner:
+    enabled: true
+    complexity_detection: true
+    
+  # Solver configuration
+  solvers:
+    - id: 0
+      temperature: 0.0  # Greedy
+    - id: 1
+      temperature: 0.3  # Exploratory
+    - id: 2
+      temperature: 0.4  # More exploratory
+      
+  # Verifier configuration
+  verifier:
+    enabled: true
+    tools:
+      - code_execution
+      - unit_tests
+      - calculator
+      
+  # Judge configuration
+  judge:
+    enabled: true
+    selection_criteria: "score_then_confidence"
+
+# Embedding Configuration
+embeddings:
+  provider: "sentence-transformers"  # local, fast, free
+  model: "all-MiniLM-L6-v2"  # 80MB, 384-dim
+  # alternatives:
+  # - all-mpnet-base-v2  # 400MB, 768-dim, better quality
+  # - openai (requires OPENAI_API_KEY)
+  # - deepseek (if available)
+
+# OCR Service
+ocr:
+  enabled: true
+  service_url: "http://localhost:8000"
+  default_resolution: "base"
+  default_task: "markdown"
+  timeout: 30
+
+# Monitoring and Observability
+monitoring:
+  prometheus_enabled: false
+  metrics_port: 9090
+  health_check_interval: 30
+  
+  # Request tracking
+  tracing:
+    enabled: true
+    sample_rate: 1.0  # 100% sampling
+    log_requests: true
+    log_responses: true
+
+# Performance
+performance:
+  max_concurrent_requests: 4
+  queue_size: 100
+  cache_enabled: true
+  
+  # Rate limiting
+  rate_limit:
+    enabled: false
+    requests_per_minute: 60
+    
+# Security
+security:
+  api_key_required: false
+  cors_enabled: true
+  cors_origins: ["*"]
+  max_request_size_mb: 100
+
+# Persistence
+persistence:
+  auto_save_interval: 300  # seconds (5 minutes)
+  snapshot_rotation: 10
+  data_dir: "data"
+

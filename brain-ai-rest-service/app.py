@@ -35,10 +35,8 @@ SERVICE_INFO = {
 
 # Statistics tracking
 import threading
+import os
 
-# ... (other imports)
-
-# Statistics tracking
 stats = {
     "total_documents": 0,
     "successful_documents": 0,
@@ -50,6 +48,76 @@ stats = {
     "total_query_time_ms": 0
 }
 stats_lock = threading.Lock()
+
+# ==================== Initialize RAG++ Components ====================
+
+# Try to import C++ backend
+USE_CPP_BACKEND = False
+cognitive_handler = None
+
+try:
+    import brain_ai_py
+    cognitive_handler = brain_ai_py.CognitiveHandler(
+        episodic_capacity=int(os.getenv("EPISODIC_CAPACITY", "128")),
+        embedding_dim=int(os.getenv("EMBEDDING_DIM", "1536"))
+    )
+    USE_CPP_BACKEND = True
+    logger.info("✅ C++ CognitiveHandler initialized")
+except Exception as e:
+    logger.warning(f"⚠️  C++ backend unavailable, using mock: {e}")
+    USE_CPP_BACKEND = False
+
+# Initialize RAG++ components
+from reranker import ReRanker
+from chunker import SmartChunker
+from facts_store import FactsStore
+from llm_deepseek import DeepSeekClient
+from multi_agent import MultiAgentOrchestrator
+
+try:
+    # Re-ranker for retrieval quality
+    reranker = ReRanker(
+        model_name=os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+    )
+    logger.info("✅ Re-ranker initialized")
+except Exception as e:
+    logger.warning(f"⚠️  Re-ranker unavailable: {e}")
+    reranker = None
+
+# Chunker for document processing
+chunker = SmartChunker(
+    chunk_size=int(os.getenv("CHUNK_SIZE", "400")),
+    overlap=int(os.getenv("CHUNK_OVERLAP", "50"))
+)
+logger.info("✅ Smart chunker initialized")
+
+# Facts store for high-confidence Q/A
+facts_store = FactsStore(
+    db_path=os.getenv("FACTS_DB_PATH", "data/facts.db"),
+    confidence_threshold=float(os.getenv("FACTS_THRESHOLD", "0.85"))
+)
+logger.info("✅ Facts store initialized")
+
+# DeepSeek LLM client
+deepseek_client = None
+if os.getenv("DEEPSEEK_API_KEY"):
+    try:
+        deepseek_client = DeepSeekClient()
+        logger.info("✅ DeepSeek client initialized")
+    except Exception as e:
+        logger.error(f"❌ DeepSeek client failed: {e}")
+else:
+    logger.warning("⚠️  DEEPSEEK_API_KEY not set - LLM features disabled")
+
+# Multi-agent orchestrator
+multi_agent = None
+if deepseek_client:
+    multi_agent = MultiAgentOrchestrator(
+        llm_client=deepseek_client,
+        n_solvers=int(os.getenv("N_SOLVERS", "3")),
+        verification_threshold=float(os.getenv("VERIFICATION_THRESHOLD", "0.85"))
+    )
+    logger.info("✅ Multi-agent orchestrator initialized")
 # ==================== Request/Response Models ====================
 
 class OCRConfig(BaseModel):
@@ -454,7 +522,6 @@ async def process_documents_batch(request: BatchDocumentRequest):
     logger.info(f"Processing batch of {len(request.documents)} documents")
     
     start_time = time.time()
-    start_time = time.time()
     
     tasks = []
     for doc_req in request.documents:
@@ -464,6 +531,7 @@ async def process_documents_batch(request: BatchDocumentRequest):
     
     results = await asyncio.gather(*tasks)
     
+    total_time_ms = int((time.time() - start_time) * 1000)
     
     successful = sum(1 for r in results if r.success)
     failed = len(results) - successful
@@ -537,16 +605,165 @@ async def search_episodes(request: SearchRequest):
     
     return result
 
+# ==================== New RAG++ Endpoints ====================
+
+@app.post("/api/v1/answer")
+async def answer_question(request: dict):
+    """
+    Answer question with optional multi-agent orchestration
+    
+    Request:
+    {
+        "question": str,
+        "use_multi_agent": bool,  # Toggle for multi-agent mode
+        "force_reasoning": bool,  # Force reasoning model
+        "evidence_threshold": float  # Minimum confidence to answer
+    }
+    """
+    question = request.get("question")
+    if not question:
+        raise HTTPException(status_code=400, detail="question required")
+    
+    use_multi_agent = request.get("use_multi_agent", False)
+    force_reasoning = request.get("force_reasoning", False)
+    evidence_threshold = request.get("evidence_threshold", 0.7)
+    
+    start_time = time.time()
+    
+    try:
+        # Check facts cache first
+        cached_fact = facts_store.lookup(question)
+        if cached_fact:
+            logger.info(f"✅ Cache hit for question")
+            cached_fact["mode"] = "cached"
+            cached_fact["processing_time_ms"] = int((time.time() - start_time) * 1000)
+            return cached_fact
+        
+        # TODO: Generate embeddings and retrieve context
+        # For now, use mock context
+        context = "Mock retrieved context..."
+        
+        # Generate answer
+        if use_multi_agent and multi_agent:
+            logger.info("🤖 Using multi-agent orchestration")
+            result = await multi_agent.solve(question, context)
+            result["mode"] = "multi_agent"
+        elif deepseek_client:
+            logger.info("💬 Using single-agent with router")
+            result = deepseek_client.generate_with_citations(
+                question=question,
+                context=context,
+                evidence_threshold=evidence_threshold
+            )
+            result["mode"] = "single_agent"
+        else:
+            raise HTTPException(status_code=503, detail="LLM service unavailable")
+        
+        # Store in facts if high confidence
+        if result.get("confidence", 0) >= facts_store.confidence_threshold:
+            facts_store.add_fact(
+                question=question,
+                answer=result.get("answer", ""),
+                citations=result.get("citations", []),
+                confidence=result["confidence"],
+                source=result["mode"]
+            )
+        
+        result["processing_time_ms"] = int((time.time() - start_time) * 1000)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Answer generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/chunk")
+async def chunk_document(request: dict):
+    """
+    Chunk document with smart sentence-aware chunking
+    
+    Request:
+    {
+        "text": str,
+        "doc_id": str,
+        "chunk_size": int,
+        "overlap": int
+    }
+    """
+    text = request.get("text")
+    doc_id = request.get("doc_id", "unknown")
+    
+    if not text:
+        raise HTTPException(status_code=400, detail="text required")
+    
+    try:
+        chunks = chunker.chunk_document(
+            text=text,
+            doc_id=doc_id,
+            metadata=request.get("metadata")
+        )
+        
+        return {
+            "doc_id": doc_id,
+            "num_chunks": len(chunks),
+            "chunks": chunks,
+            "total_tokens": sum(c["token_count"] for c in chunks)
+        }
+    except Exception as e:
+        logger.error(f"Chunking failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/facts/stats")
+async def get_facts_stats():
+    """Get facts store statistics"""
+    try:
+        stats = facts_store.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Facts stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/system/status")
+async def get_system_status():
+    """Get comprehensive system status"""
+    status = {
+        "service": "brain-ai-rest-service",
+        "version": "1.0.0",
+        "timestamp": datetime.now().isoformat(),
+        "components": {
+            "cpp_backend": USE_CPP_BACKEND,
+            "reranker": reranker is not None,
+            "facts_store": True,
+            "deepseek_llm": deepseek_client is not None,
+            "multi_agent": multi_agent is not None
+        }
+    }
+    
+    if cognitive_handler and USE_CPP_BACKEND:
+        status["cpp_stats"] = cognitive_handler.get_stats()
+    
+    if deepseek_client:
+        status["llm_stats"] = deepseek_client.get_usage_stats()
+    
+    status["facts_stats"] = facts_store.get_stats()
+    
+    return status
+
+
 if __name__ == "__main__":
     import uvicorn
     
-    logger.info("Starting Brain-AI REST Service...")
+    logger.info("🚀 Starting Brain-AI REST Service (RAG++)...")
     logger.info(f"Service info: {SERVICE_INFO}")
+    logger.info(f"C++ Backend: {'✅ Enabled' if USE_CPP_BACKEND else '❌ Disabled'}")
+    logger.info(f"Multi-Agent: {'✅ Enabled' if multi_agent else '❌ Disabled'}")
     
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=5000,
+        port=5001,
         log_level="info",
         access_log=True
     )

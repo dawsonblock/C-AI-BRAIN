@@ -29,23 +29,53 @@ bool BrainAIServiceImpl::start() {
         return false;
     }
     
-    std::cout << "[BrainAIService] Starting server at "
-              << config_.server_address << "..." << std::endl;
+    try {
+        std::cout << "[BrainAIService] Starting server at "
+                  << config_.server_address << "..." << std::endl;
 
-    // TODO: Implement gRPC server startup once protobuf is compiled.
-    // For now, fail fast to avoid falsely reporting a running server.
-    std::cerr << "[BrainAIService] gRPC server not implemented yet. Startup aborted." << std::endl;
-    return false;
-
-    // When implemented:
-    // grpc::ServerBuilder builder;
-    // builder.AddListeningPort(config_.server_address, grpc::InsecureServerCredentials());
-    // builder.RegisterService(this);
-    // server_ = builder.BuildAndStart();
-    // if (!server_) return false;
-    // running_.store(true);
-    // if (config_.enable_reflection) { /* enable reflection */ }
-    // return true;
+        grpc::ServerBuilder builder;
+        
+        // Add listening port
+        builder.AddListeningPort(
+            config_.server_address,
+            grpc::InsecureServerCredentials()
+        );
+        
+        // Register main service
+        builder.RegisterService(this);
+        
+        // Enable health checking
+        health_service_ = std::make_unique<grpc::DefaultHealthCheckService>();
+        builder.RegisterService(health_service_.get());
+        health_service_->SetServingStatus("", grpc::health::v1::HealthCheckResponse::SERVING);
+        
+        // Enable reflection for debugging (if enabled)
+        if (config_.enable_reflection) {
+            grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+            std::cout << "[BrainAIService] gRPC reflection enabled" << std::endl;
+        }
+        
+        // Set server limits
+        builder.SetMaxReceiveMessageSize(100 * 1024 * 1024);  // 100MB max message
+        builder.SetMaxSendMessageSize(100 * 1024 * 1024);
+        
+        // Build and start server
+        server_ = builder.BuildAndStart();
+        if (!server_) {
+            std::cerr << "[BrainAIService] Failed to build server" << std::endl;
+            return false;
+        }
+        
+        running_.store(true);
+        std::cout << "[BrainAIService] ✅ Server listening on " 
+                  << config_.server_address << std::endl;
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[BrainAIService] Start failed: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 void BrainAIServiceImpl::stop() {
@@ -55,14 +85,20 @@ void BrainAIServiceImpl::stop() {
     
     std::cout << "[BrainAIService] Stopping server..." << std::endl;
     
-    // TODO: Implement server shutdown
-    // if (server_) {
-    //     server_->Shutdown();
-    // }
+    // Update health status
+    if (health_service_) {
+        health_service_->SetServingStatus("", grpc::health::v1::HealthCheckResponse::NOT_SERVING);
+    }
+    
+    // Shutdown server gracefully
+    if (server_) {
+        auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(5);
+        server_->Shutdown(deadline);
+    }
     
     running_.store(false);
     
-    std::cout << "[BrainAIService] Server stopped" << std::endl;
+    std::cout << "[BrainAIService] ✅ Server stopped" << std::endl;
 }
 
 void BrainAIServiceImpl::wait() {
@@ -72,10 +108,11 @@ void BrainAIServiceImpl::wait() {
     
     std::cout << "[BrainAIService] Waiting for server to shutdown..." << std::endl;
     
-    // TODO: Implement wait
-    // if (server_) {
-    //     server_->Wait();
-    // }
+    if (server_) {
+        server_->Wait();
+    }
+    
+    std::cout << "[BrainAIService] Server wait completed" << std::endl;
 }
 
 void BrainAIServiceImpl::update_query_stats(bool success) {
