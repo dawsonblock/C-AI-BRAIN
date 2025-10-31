@@ -105,10 +105,12 @@ if __name__ == "__main__":
     images_path = glob.glob(f'{INPUT_PATH}/*')
 
     images = []
-
     for image_path in images_path:
-        image = Image.open(image_path).convert('RGB')
-        images.append(image)
+        try:
+            with Image.open(image_path) as im:
+                images.append(im.convert('RGB').copy())  # close file, keep data
+        except Exception as e:
+            print(f"Failed to load image '{image_path}': {e}")
 
     prompt = PROMPT
 
