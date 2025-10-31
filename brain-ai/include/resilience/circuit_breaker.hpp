@@ -90,29 +90,32 @@ public:
     auto execute(Func&& func, Args&&... args) -> decltype(func(args...)) {
         // Check if circuit allows call
         if (!allow_request()) {
-            stats_.rejected_calls++;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                stats_.rejected_calls++;
+            }
             throw CircuitBreakerOpenException(name_);
         }
-        
+    
         // Track concurrent calls
         concurrent_calls_++;
-        stats_.current_concurrent_calls = concurrent_calls_.load();
-        
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stats_.current_concurrent_calls = concurrent_calls_.load();
+        }
+
+        // Ensure concurrent_calls_ is decremented exactly once
+        struct DecrementGuard {
+            std::atomic<int>& ref;
+            ~DecrementGuard() { ref--; }
+        } guard{concurrent_calls_};
+
         try {
-            // Execute the function
             auto result = func(std::forward<Args>(args)...);
-            
-            // Record success
             on_success();
-            
-            concurrent_calls_--;
             return result;
-            
         } catch (...) {
-            // Record failure
             on_failure();
-            
-            concurrent_calls_--;
             throw;
         }
     }
