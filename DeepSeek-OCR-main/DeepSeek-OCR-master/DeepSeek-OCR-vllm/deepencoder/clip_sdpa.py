@@ -187,7 +187,6 @@ class NoTPFeedForward(nn.Module):
 
 #         # self.core_attention = CoreAttention(cfg, AttnType.self_attn)
 
-#         self.attn_drop = cfg.attention_dropout
 
 #     def forward(
 #             self,
