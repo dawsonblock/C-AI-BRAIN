@@ -167,7 +167,24 @@ security:
 
 # Persistence
 persistence:
+  enabled: true
   auto_save_interval: 300  # seconds (5 minutes)
+  auto_save_interval_docs: 10  # Save every N documents
   snapshot_rotation: 10
-  data_dir: "data"
+  data_dir: "data/persistence"
+  load_on_startup: true
+
+# Security and rate limiting
+security:
+  api_key_required: false
+  api_key_env: "BRAIN_AI_API_KEY"
+  cors_enabled: true
+  cors_origins: ["*"]
+  max_request_size_mb: 10
+  
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    burst_size: 10
+    max_concurrent_requests: 5
 
