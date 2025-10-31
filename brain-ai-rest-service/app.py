@@ -12,7 +12,6 @@ import logging
 import time
 import asyncio
 from datetime import datetime
-import json
 
 # Configure logging
 logging.basicConfig(
