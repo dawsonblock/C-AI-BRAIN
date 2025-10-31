@@ -79,12 +79,15 @@ def re_match(text):
     return matches, mathes_other
 
 processor = DeepseekOCRProcessor()
-def process_single_image(image):
+def process_single_image(image, prompt_in):
     """single image"""
-    prompt_in = prompt
     cache_item = {
         "prompt": prompt_in,
-        "multi_modal_data": {"image": processor.tokenize_with_images(images = [image], bos=True, eos=True, cropping=CROP_MODE)},
+        "multi_modal_data": {
+            "image": processor.tokenize_with_images(
+                images=[image], bos=True, eos=True, cropping=CROP_MODE
+            )
+        },
     }
     return cache_item
 
