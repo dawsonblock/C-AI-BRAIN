@@ -390,17 +390,18 @@ bool test_service_timeout() {
     // This test uses a very short timeout to trigger timeout handling
     OCRConfig config;
     config.service_url = OCR_SERVICE_URL;
-    config.timeout = std::chrono::seconds(1);  // 1s timeout
+    config.timeout = std::chrono::milliseconds(1);  // 1ms timeout, very likely to trigger
     
     try {
         OCRClient client(config);
         
         // Service might not be available or timeout is too short
         // Either way, we're testing the timeout mechanism
-        bool health = client.check_health();
+        client.check_health();
         
-        // If we get here, the service responded very quickly
-        std::cout << "  Service responded within 1ms (very fast!)" << std::endl;
+        // If we get here, the timeout did NOT trigger as expected.
+        std::cerr << "  FAIL: Timeout was expected but request succeeded." << std::endl;
+        return false;
         
     } catch (const std::exception& e) {
         std::cout << "  Timeout/exception as expected: " << e.what() << std::endl;
