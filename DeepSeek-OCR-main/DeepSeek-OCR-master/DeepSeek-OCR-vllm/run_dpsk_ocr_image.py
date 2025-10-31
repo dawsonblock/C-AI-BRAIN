@@ -108,7 +108,6 @@ def draw_bounding_boxes(image, refs):
                             cropped.save(f"{OUTPUT_PATH}/images/{img_idx}.jpg")
                         except Exception as e:
                             print(e)
-                            pass
                         img_idx += 1
                         
                     try:
