@@ -96,6 +96,9 @@ set(BRAIN_AI_SOURCES
     src/document/ocr_client.cpp
     src/document/text_validator.cpp
     src/document/document_processor.cpp
+    
+    # Enhanced indexing (v4.3.0 - Phase 5)
+    src/indexing/index_manager.cpp
 )
 
 # Create library
