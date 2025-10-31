@@ -449,15 +449,16 @@ async def process_documents_batch(request: BatchDocumentRequest):
     logger.info(f"Processing batch of {len(request.documents)} documents")
     
     start_time = time.time()
-    results = []
+    start_time = time.time()
     
+    tasks = []
     for doc_req in request.documents:
         if request.ocr_config:
             doc_req.ocr_config = request.ocr_config
-        result = await brain_ai.process_document(doc_req)
-        results.append(result)
+        tasks.append(brain_ai.process_document(doc_req))
     
-    total_time_ms = int((time.time() - start_time) * 1000)
+    results = await asyncio.gather(*tasks)
+    
     
     successful = sum(1 for r in results if r.success)
     failed = len(results) - successful
