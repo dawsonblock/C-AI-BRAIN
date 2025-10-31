@@ -16,25 +16,26 @@ class NoRepeatNGramLogitsProcessor(LogitsProcessor):
         self.whitelist_token_ids = whitelist_token_ids or set()
     
     def __call__(self, input_ids: List[int], scores: torch.FloatTensor) -> torch.FloatTensor:
-        if len(input_ids) < self.ngram_size:
+        num_input_ids = len(input_ids)
+        if num_input_ids < self.ngram_size:
             return scores
-        
+
+        search_start = max(0, num_input_ids - self.window_size)
+    
+        # Create a set of n-grams in the search window for efficient lookup
+        ngrams = {tuple(input_ids[i:i+self.ngram_size]) for i in range(search_start, num_input_ids - self.ngram_size + 1)}
+
         current_prefix = tuple(input_ids[-(self.ngram_size - 1):])
-        
-        search_start = max(0, len(input_ids) - self.window_size)
-        search_end = len(input_ids) - self.ngram_size + 1
-        
+    
         banned_tokens = set()
-        for i in range(search_start, search_end):
-            ngram = tuple(input_ids[i:i + self.ngram_size])
+        for ngram in ngrams:
             if ngram[:-1] == current_prefix:
                 banned_tokens.add(ngram[-1])
-        
-        banned_tokens = banned_tokens - self.whitelist_token_ids
-        
+
+        banned_tokens -= self.whitelist_token_ids
+    
         if banned_tokens:
             scores = scores.clone()
-            for token in banned_tokens:
-                scores[token] = -float("inf")
-        
+            scores[list(banned_tokens)] = -float("inf")
+    
         return scores
