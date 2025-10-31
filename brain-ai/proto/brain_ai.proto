@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package brain_ai;
+
+// BrainAI gRPC Service Definition
+// Provides access to cognitive processing, document processing, and vector search
+
+service BrainAIService {
+  // Cognitive processing methods
+  rpc ProcessQuery(QueryRequest) returns (QueryResponse);
+  rpc ProcessBatchQueries(BatchQueryRequest) returns (BatchQueryResponse);
+  
+  // Document processing methods
+  rpc ProcessDocument(DocumentRequest) returns (DocumentResponse);
+  rpc ProcessBatchDocuments(BatchDocumentRequest) returns (stream DocumentResponse);
+  
+  // Vector search methods
+  rpc SearchSimilar(SearchRequest) returns (SearchResponse);
+  rpc IndexDocument(IndexRequest) returns (IndexResponse);
+  
+  // Memory methods
+  rpc AddEpisode(EpisodeRequest) returns (EpisodeResponse);
+  rpc GetRecentEpisodes(RecentEpisodesRequest) returns (EpisodesResponse);
+  rpc SearchEpisodes(SearchEpisodesRequest) returns (EpisodesResponse);
+  
+  // Health and status
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc GetStats(StatsRequest) returns (StatsResponse);
+}
+
+// ============================================================================
+// Request/Response Messages
+// ============================================================================
+
+// Query processing
+message QueryRequest {
+  string query = 1;
+  repeated float query_embedding = 2;  // Optional pre-computed embedding
+  int32 top_k = 3;                     // Number of results to return
+  map<string, string> metadata = 4;    // Additional metadata
+}
+
+message QueryResponse {
+  string response = 1;
+  float confidence = 2;
+  repeated ScoredResult results = 3;
+  Explanation explanation = 4;
+  int64 processing_time_ms = 5;
+}
+
+message BatchQueryRequest {
+  repeated QueryRequest queries = 1;
+}
+
+message BatchQueryResponse {
+  repeated QueryResponse responses = 1;
+}
+
+// Document processing
+message DocumentRequest {
+  string doc_id = 1;
+  oneof content {
+    string file_path = 2;
+    bytes image_data = 3;
+  }
+  string mime_type = 4;
+  OCRConfig ocr_config = 5;
+  map<string, string> metadata = 6;
+}
+
+message DocumentResponse {
+  string doc_id = 1;
+  string extracted_text = 2;
+  string validated_text = 3;
+  float ocr_confidence = 4;
+  float validation_confidence = 5;
+  bool indexed = 6;
+  bool success = 7;
+  string error_message = 8;
+  int64 processing_time_ms = 9;
+  map<string, string> metadata = 10;
+}
+
+message BatchDocumentRequest {
+  repeated DocumentRequest documents = 1;
+}
+
+// Vector search
+message SearchRequest {
+  repeated float query_embedding = 1;
+  int32 top_k = 2;
+  float similarity_threshold = 3;
+  map<string, string> filters = 4;
+}
+
+message SearchResponse {
+  repeated ScoredResult results = 1;
+  int64 search_time_ms = 2;
+}
+
+message IndexRequest {
+  string doc_id = 1;
+  repeated float embedding = 2;
+  string content = 3;
+  map<string, string> metadata = 4;
+}
+
+message IndexResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// Memory (Episodic buffer)
+message EpisodeRequest {
+  string query = 1;
+  string response = 2;
+  repeated float query_embedding = 3;
+  map<string, string> metadata = 4;
+}
+
+message EpisodeResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message RecentEpisodesRequest {
+  int32 count = 1;
+}
+
+message SearchEpisodesRequest {
+  repeated float query_embedding = 1;
+  int32 top_k = 2;
+  float similarity_threshold = 3;
+}
+
+message EpisodesResponse {
+  repeated Episode episodes = 1;
+}
+
+// Health and stats
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;  // "healthy", "degraded", "unhealthy"
+  map<string, string> details = 2;
+  int64 uptime_seconds = 3;
+}
+
+message StatsRequest {}
+
+message StatsResponse {
+  int64 total_queries = 1;
+  int64 total_documents = 2;
+  int64 indexed_documents = 3;
+  int64 episodic_buffer_size = 4;
+  int64 semantic_network_size = 5;
+  double avg_query_time_ms = 6;
+  double avg_document_time_ms = 7;
+  map<string, int64> additional_stats = 8;
+}
+
+// ============================================================================
+// Data Types
+// ============================================================================
+
+message ScoredResult {
+  string content = 1;
+  float score = 2;
+  string source = 3;
+  map<string, string> metadata = 4;
+}
+
+message Explanation {
+  string reasoning = 1;
+  repeated string supporting_evidence = 2;
+  repeated string conflicting_evidence = 3;
+  float confidence = 4;
+}
+
+message Episode {
+  string query = 1;
+  string response = 2;
+  repeated float query_embedding = 3;
+  int64 timestamp_ms = 4;
+  map<string, string> metadata = 5;
+}
+
+message OCRConfig {
+  string service_url = 1;
+  string mode = 2;          // "tiny", "small", "base", "large", "gundam"
+  string task = 3;          // "ocr", "markdown", "figure", "reference", "describe"
+  int32 max_tokens = 4;
+  float temperature = 5;
+  int32 timeout_seconds = 6;
+  int32 max_retries = 7;
+}
+
+// ============================================================================
+// Streaming Messages
+// ============================================================================
+
+message StreamingQueryRequest {
+  string query = 1;
+  repeated float query_embedding = 2;
+  int32 top_k = 3;
+}
+
+message StreamingQueryResponse {
+  oneof message {
+    string partial_response = 1;
+    QueryResponse final_response = 2;
+  }
+}

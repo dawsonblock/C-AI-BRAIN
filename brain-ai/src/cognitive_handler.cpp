@@ -6,13 +6,15 @@ namespace brain_ai {
 
 CognitiveHandler::CognitiveHandler(
     size_t episodic_capacity,
-    const FusionWeights& fusion_weights
+    const FusionWeights& fusion_weights,
+    size_t embedding_dim
 ) : episodic_buffer_(episodic_capacity),
-    fusion_(fusion_weights) {
-    // Initialize HNSWlib vector index with default OpenAI ada-002 dimension (1536)
-    // Can be configured for other embedding models
+    fusion_(fusion_weights),
+    embedding_dim_(embedding_dim) {
+    // Initialize HNSWlib vector index with configurable dimension
+    // Default is OpenAI ada-002 dimension (1536), but can be customized for other models
     vector_index_ = std::make_unique<vector_search::HNSWIndex>(
-        1536,  // Dimension (OpenAI ada-002)
+        embedding_dim_,  // Configurable dimension
         100000,  // Max elements
         16,      // M parameter
         200      // ef_construction

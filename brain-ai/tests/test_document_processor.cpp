@@ -236,8 +236,8 @@ bool test_text_validator_unicode() {
     
     TextValidator validator(config);
     
-    // Using hex escapes for Unicode characters
-    std::string text_with_unicode = "Hello \xE2\x80\x9Csmart quotes\xE2\x80\x9D and \xE2\x80\x98apostrophes\xE2\x80\x99";
+    // Using UTF-8 string literal for Unicode characters (smart quotes: U+201C, U+201D, U+2018, U+2019)
+    std::string text_with_unicode = "Hello \u201Csmart quotes\u201D and \u2018apostrophes\u2019";
     auto result = validator.validate(text_with_unicode);
     
     EXPECT_TRUE(result.is_valid);
