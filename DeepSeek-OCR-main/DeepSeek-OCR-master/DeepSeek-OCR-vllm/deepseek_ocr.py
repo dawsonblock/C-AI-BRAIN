@@ -357,7 +357,6 @@ class DeepseekOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             return [pixel_values, images_crop, images_spatial_crop]
 
 
-        raise AssertionError("This line should be unreachable.")
     
 
 
