@@ -330,16 +330,27 @@ class DeepseekOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
 
 
 
-    def _parse_and_validate_image_input(
-            self, **kwargs: object):
-        
+    def _parse_and_validate_image_input(self, **kwargs: object):
         pixel_values = kwargs.pop("pixel_values", None)
         images_spatial_crop = kwargs.pop("images_spatial_crop", None)
         images_crop = kwargs.pop("images_crop", None)
 
-
-        if pixel_values is None or torch.sum(pixel_values).item() == 0:
+        # Fast emptiness/validity checks without full-tensor reductions
+        if pixel_values is None:
             return None
+        if isinstance(pixel_values, (list, tuple)) and len(pixel_values) == 0:
+            return None
+        if isinstance(pixel_values, torch.Tensor) and pixel_values.numel() == 0:
+            return None
+
+        if not isinstance(pixel_values, (torch.Tensor, list)):
+            raise ValueError(f"Incorrect type of pixel values. Got type: {type(pixel_values)}")
+        if not isinstance(images_spatial_crop, (torch.Tensor, list)):
+            raise ValueError(f"Incorrect type of image sizes. Got type: {type(images_spatial_crop)}")
+        if not isinstance(images_crop, (torch.Tensor, list)):
+            raise ValueError(f"Incorrect type of image crop. Got type: {type(images_crop)}")
+
+        return [pixel_values, images_crop, images_spatial_crop]
 
         if pixel_values is not None:
             if not isinstance(pixel_values, (torch.Tensor, list)):
