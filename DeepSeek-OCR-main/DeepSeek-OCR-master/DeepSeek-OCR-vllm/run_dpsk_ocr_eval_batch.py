@@ -146,10 +146,21 @@ if __name__ == "__main__":
     output_path = OUTPUT_PATH
 
     os.makedirs(output_path, exist_ok=True)
+if len(outputs_list) != len(images_path):
+    print(f"Warning: outputs ({len(outputs_list)}) != inputs ({len(images_path)}). Attempting best-effort mapping.")
 
-    for output, image_path in zip(outputs_list, images_path):
-
+for idx, image_path in enumerate(images_path):
+    if idx >= len(outputs_list):
+        print(f"Missing output for '{image_path}', skipping.")
+        continue
+    output = outputs_list[idx]
+    try:
         content = output.outputs[0].text
+    except Exception as e:
+        print(f"Invalid output structure for '{image_path}': {e}")
+        continue
+
+    base_name = os.path.basename(image_path)
         base_name = os.path.basename(image_path)
         file_name, _ = os.path.splitext(base_name)
     
