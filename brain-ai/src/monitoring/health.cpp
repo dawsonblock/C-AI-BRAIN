@@ -5,9 +5,18 @@
 #include <fstream>
 #include <thread>
 #include <future>
-#include <sys/sysinfo.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
+
+// Platform-specific includes
+#ifdef __linux__
+    #include <sys/sysinfo.h>
+#elif defined(__APPLE__)
+    #include <sys/types.h>
+    #include <sys/sysctl.h>
+    #include <mach/mach.h>
+    #include <mach/mach_host.h>
+#endif
 
 namespace brain_ai {
 namespace monitoring {
@@ -282,15 +291,49 @@ HealthCheckResult check_memory_health() {
     auto result = create_health_result("memory", HealthStatus::HEALTHY,
                                       "Memory usage within limits");
     
+    unsigned long total_ram = 0;
+    unsigned long free_ram = 0;
+    
+#ifdef __linux__
     struct sysinfo info;
     if (sysinfo(&info) != 0) {
         result.status = HealthStatus::UNKNOWN;
         result.message = "Failed to get memory info";
         return result;
     }
+    total_ram = (info.totalram * info.mem_unit) / (1024 * 1024); // MB
+    free_ram  = (info.freeram  * info.mem_unit) / (1024 * 1024); // MB
     
-    unsigned long total_ram = (info.totalram * info.mem_unit) / (1024 * 1024); // MB
-    unsigned long free_ram  = (info.freeram  * info.mem_unit) / (1024 * 1024); // MB
+#elif defined(__APPLE__)
+    // Get total memory
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    uint64_t memsize;
+    size_t len = sizeof(memsize);
+    if (sysctl(mib, 2, &memsize, &len, NULL, 0) != 0) {
+        result.status = HealthStatus::UNKNOWN;
+        result.message = "Failed to get memory info";
+        return result;
+    }
+    total_ram = memsize / (1024 * 1024); // MB
+    
+    // Get free memory from VM stats
+    vm_statistics64_data_t vm_stats;
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64, 
+                          (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
+        unsigned long page_size = getpagesize();
+        free_ram = (vm_stats.free_count * page_size) / (1024 * 1024);
+    } else {
+        // Estimate 20% free if we can't get stats
+        free_ram = total_ram / 5;
+    }
+#else
+    // Unknown platform - return degraded status
+    result.status = HealthStatus::DEGRADED;
+    result.message = "Memory check not supported on this platform";
+    return result;
+#endif
+    
     unsigned long used_ram  = total_ram > free_ram ? (total_ram - free_ram) : 0;
     double usage_percent = total_ram > 0 ? (static_cast<double>(used_ram) / total_ram) * 100.0 : 0.0;
 

@@ -12,7 +12,7 @@ service:
 cpp_backend:
   enabled: true
   episodic_capacity: 128
-  embedding_dim: 1536  # OpenAI ada-002 / text-embedding-3-small
+  embedding_dim: 768  # all-mpnet-base-v2 (768-dim)
   fusion_weights:
     vector: 0.4
     episodic: 0.3
@@ -60,8 +60,8 @@ llm:
   # Model routing
   router:
     enabled: true
-    reasoning_model: "deepseek-reasoner"  # R1 for complex reasoning
-    chat_model: "deepseek-chat"           # V3/32B for retrieval
+    reasoning_model: "deepseek-r1"        # R1 for complex reasoning
+    chat_model: "deepseek-chat"           # V3 for retrieval
     
   # Generation parameters
   generation:
@@ -119,9 +119,10 @@ multi_agent:
 # Embedding Configuration
 embeddings:
   provider: "sentence-transformers"  # local, fast, free
-  model: "all-MiniLM-L6-v2"  # 80MB, 384-dim
+  model: "all-mpnet-base-v2"  # 400MB, 768-dim, better quality
+  dimension: 768
   # alternatives:
-  # - all-mpnet-base-v2  # 400MB, 768-dim, better quality
+  # - all-MiniLM-L6-v2  # 80MB, 384-dim, faster
   # - openai (requires OPENAI_API_KEY)
   # - deepseek (if available)
 

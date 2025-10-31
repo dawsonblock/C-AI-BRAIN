@@ -12,6 +12,9 @@ import logging
 import time
 import asyncio
 from datetime import datetime
+import yaml
+import os
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -19,6 +22,16 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Load configuration from YAML
+config_path = Path(__file__).parent / "config.yaml"
+try:
+    with open(config_path, 'r') as f:
+        CONFIG = yaml.safe_load(f)
+    logger.info(f"✅ Loaded configuration from {config_path}")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to load config.yaml: {e}, using defaults")
+    CONFIG = {}
 
 app = FastAPI(
     title="Brain-AI REST Service",
@@ -35,7 +48,6 @@ SERVICE_INFO = {
 
 # Statistics tracking
 import threading
-import os
 
 stats = {
     "total_documents": 0,
@@ -51,21 +63,47 @@ stats_lock = threading.Lock()
 
 # ==================== Initialize RAG++ Components ====================
 
+# Helper to get config value with env override
+def get_config(key_path: str, default=None):
+    """Get config value from YAML or env var. key_path like 'cpp_backend.embedding_dim'"""
+    # Try environment variable first (uppercase with underscores)
+    env_key = key_path.upper().replace('.', '_')
+    env_val = os.getenv(env_key)
+    if env_val is not None:
+        return env_val
+    
+    # Try config YAML
+    keys = key_path.split('.')
+    val = CONFIG
+    for k in keys:
+        if isinstance(val, dict):
+            val = val.get(k)
+        else:
+            return default
+        if val is None:
+            return default
+    return val
+
 # Try to import C++ backend
 USE_CPP_BACKEND = False
 cognitive_handler = None
 
-try:
-    import brain_ai_py
-    cognitive_handler = brain_ai_py.CognitiveHandler(
-        episodic_capacity=int(os.getenv("EPISODIC_CAPACITY", "128")),
-        embedding_dim=int(os.getenv("EMBEDDING_DIM", "1536"))
-    )
-    USE_CPP_BACKEND = True
-    logger.info("✅ C++ CognitiveHandler initialized")
-except Exception as e:
-    logger.warning(f"⚠️  C++ backend unavailable, using mock: {e}")
-    USE_CPP_BACKEND = False
+cpp_enabled = get_config('cpp_backend.enabled', True)
+if cpp_enabled:
+    try:
+        import brain_ai_py
+        embedding_dim = int(get_config('cpp_backend.embedding_dim', 768))
+        episodic_capacity = int(get_config('cpp_backend.episodic_capacity', 128))
+        
+        cognitive_handler = brain_ai_py.CognitiveHandler(
+            episodic_capacity=episodic_capacity,
+            embedding_dim=embedding_dim
+        )
+        USE_CPP_BACKEND = True
+        logger.info(f"✅ C++ CognitiveHandler initialized (dim={embedding_dim}, capacity={episodic_capacity})")
+    except Exception as e:
+        logger.warning(f"⚠️  C++ backend unavailable, using mock: {e}")
+        USE_CPP_BACKEND = False
 
 # Initialize RAG++ components
 from reranker import ReRanker
@@ -74,50 +112,57 @@ from facts_store import FactsStore
 from llm_deepseek import DeepSeekClient
 from multi_agent import MultiAgentOrchestrator
 
-try:
-    # Re-ranker for retrieval quality
-    reranker = ReRanker(
-        model_name=os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
-    )
-    logger.info("✅ Re-ranker initialized")
-except Exception as e:
-    logger.warning(f"⚠️  Re-ranker unavailable: {e}")
-    reranker = None
+# Re-ranker for retrieval quality
+reranker = None
+if get_config('retrieval.reranker.enabled', True):
+    try:
+        reranker_model = get_config('retrieval.reranker.model', 'cross-encoder/ms-marco-MiniLM-L-6-v2')
+        reranker = ReRanker(model_name=reranker_model)
+        logger.info(f"✅ Re-ranker initialized ({reranker_model})")
+    except Exception as e:
+        logger.warning(f"⚠️  Re-ranker unavailable: {e}")
 
 # Chunker for document processing
-chunker = SmartChunker(
-    chunk_size=int(os.getenv("CHUNK_SIZE", "400")),
-    overlap=int(os.getenv("CHUNK_OVERLAP", "50"))
-)
-logger.info("✅ Smart chunker initialized")
+chunk_size = int(get_config('retrieval.chunking.chunk_size', 400))
+overlap = int(get_config('retrieval.chunking.overlap', 50))
+chunker = SmartChunker(chunk_size=chunk_size, overlap=overlap)
+logger.info(f"✅ Smart chunker initialized (size={chunk_size}, overlap={overlap})")
 
 # Facts store for high-confidence Q/A
-facts_store = FactsStore(
-    db_path=os.getenv("FACTS_DB_PATH", "data/facts.db"),
-    confidence_threshold=float(os.getenv("FACTS_THRESHOLD", "0.85"))
-)
-logger.info("✅ Facts store initialized")
+facts_db_path = get_config('facts.db_path', 'data/facts.db')
+facts_threshold = float(get_config('facts.confidence_threshold', 0.85))
+facts_store = FactsStore(db_path=facts_db_path, confidence_threshold=facts_threshold)
+logger.info(f"✅ Facts store initialized (threshold={facts_threshold})")
 
 # DeepSeek LLM client
 deepseek_client = None
-if os.getenv("DEEPSEEK_API_KEY"):
+api_key_env = get_config('llm.api_key_env', 'DEEPSEEK_API_KEY')
+if os.getenv(api_key_env):
     try:
-        deepseek_client = DeepSeekClient()
-        logger.info("✅ DeepSeek client initialized")
+        base_url = get_config('llm.base_url', 'https://api.deepseek.com')
+        max_retries = int(get_config('llm.retry.max_retries', 3))
+        deepseek_client = DeepSeekClient(
+            api_key=os.getenv(api_key_env),
+            base_url=base_url,
+            max_retries=max_retries
+        )
+        logger.info(f"✅ DeepSeek client initialized ({base_url})")
     except Exception as e:
         logger.error(f"❌ DeepSeek client failed: {e}")
 else:
-    logger.warning("⚠️  DEEPSEEK_API_KEY not set - LLM features disabled")
+    logger.warning(f"⚠️  {api_key_env} not set - LLM features disabled")
 
 # Multi-agent orchestrator
 multi_agent = None
-if deepseek_client:
+if deepseek_client and get_config('multi_agent.enabled', True):
+    n_solvers = int(get_config('multi_agent.solvers.n_solvers', 3))
+    verification_threshold = float(get_config('multi_agent.verification.threshold', 0.85))
     multi_agent = MultiAgentOrchestrator(
         llm_client=deepseek_client,
-        n_solvers=int(os.getenv("N_SOLVERS", "3")),
-        verification_threshold=float(os.getenv("VERIFICATION_THRESHOLD", "0.85"))
+        n_solvers=n_solvers,
+        verification_threshold=verification_threshold
     )
-    logger.info("✅ Multi-agent orchestrator initialized")
+    logger.info(f"✅ Multi-agent orchestrator initialized (n_solvers={n_solvers})")
 # ==================== Request/Response Models ====================
 
 class OCRConfig(BaseModel):

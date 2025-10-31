@@ -23,8 +23,8 @@ class GenerationConfig:
 class DeepSeekRouter:
     """Intelligently route queries to appropriate DeepSeek model"""
     
-    REASONING_MODEL = "deepseek-reasoner"  # R1 - for complex reasoning
-    CHAT_MODEL = "deepseek-chat"           # V3/32B - for retrieval/chat
+    REASONING_MODEL = "deepseek-r1"   # R1 - for complex reasoning
+    CHAT_MODEL = "deepseek-chat"      # V3 - for retrieval/chat
     
     def select_model(
         self,
