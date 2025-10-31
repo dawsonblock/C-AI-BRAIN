@@ -64,7 +64,12 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to start server" << std::endl;
         return 1;
     }
-    
+
+    if (!service->is_running()) {
+        std::cerr << "Server is not running after start()" << std::endl;
+        return 1;
+    }
+
     std::cout << std::endl;
     std::cout << "Server Configuration:" << std::endl;
     std::cout << "  Address: " << server_address << std::endl;
@@ -73,14 +78,12 @@ int main(int argc, char** argv) {
     std::cout << std::endl;
     std::cout << "Press Ctrl+C to stop the server..." << std::endl;
     std::cout << std::endl;
-    
+
     // Wait for shutdown signal
-    while (!shutdown_requested.load()) {
+    while (!shutdown_requested.load() && service->is_running()) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-        // Periodically print stats
         static int counter = 0;
-        if (++counter % 60 == 0) {  // Every 60 seconds
+        if (++counter % 60 == 0) {
             auto stats = service->get_stats();
             std::cout << "Stats: "
                       << "Queries=" << stats.total_queries.load()
