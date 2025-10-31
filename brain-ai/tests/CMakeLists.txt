@@ -32,10 +32,16 @@ if(NOT GTest_FOUND)
         test_vector_search.cpp
     )
     
+    # New tests for v4.2.0 document processing
+    add_executable(brain_ai_document_processor_tests
+        test_document_processor.cpp
+    )
+    
     target_link_libraries(brain_ai_tests PRIVATE brain_ai_lib)
     target_link_libraries(brain_ai_monitoring_tests PRIVATE brain_ai_lib)
     target_link_libraries(brain_ai_resilience_tests PRIVATE brain_ai_lib)
     target_link_libraries(brain_ai_vector_search_tests PRIVATE brain_ai_lib)
+    target_link_libraries(brain_ai_document_processor_tests PRIVATE brain_ai_lib)
     
 else()
     message(STATUS "Google Test found - building with GTest")
@@ -69,4 +75,8 @@ endif()
 if(TARGET brain_ai_resilience_tests)
     add_test(NAME ResilienceTests COMMAND brain_ai_resilience_tests)
     add_test(NAME VectorSearchTests COMMAND brain_ai_vector_search_tests)
+endif()
+
+if(TARGET brain_ai_document_processor_tests)
+    add_test(NAME DocumentProcessorTests COMMAND brain_ai_document_processor_tests)
 endif()

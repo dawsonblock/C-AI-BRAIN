@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(BrainAI VERSION 4.1.0 LANGUAGES CXX)
+project(BrainAI VERSION 4.2.0 LANGUAGES CXX)
 
 # C++17 required
 set(CMAKE_CXX_STANDARD 17)
@@ -26,6 +26,7 @@ endif()
 
 # Find packages
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # Fetch dependencies (header-only libraries)
 include(FetchContent)
@@ -46,9 +47,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(hnswlib)
 
+# cpp-httplib for HTTP client
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG        v0.15.3
+)
+FetchContent_MakeAvailable(httplib)
+
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${hnswlib_SOURCE_DIR})
+include_directories(${httplib_SOURCE_DIR})
 
 # Verify required source files exist to prevent opaque build errors
 foreach(_src
@@ -81,11 +91,21 @@ set(BRAIN_AI_SOURCES
     
     # Vector search integration (v4.1.0)
     src/vector_search/hnsw_index.cpp
+    
+    # Document processing pipeline (v4.2.0 - DeepSeek-OCR integration)
+    src/document/ocr_client.cpp
+    src/document/text_validator.cpp
+    src/document/document_processor.cpp
 )
 
 # Create library
 add_library(brain_ai_lib STATIC ${BRAIN_AI_SOURCES})
-target_link_libraries(brain_ai_lib PUBLIC Threads::Threads nlohmann_json::nlohmann_json)
+target_link_libraries(brain_ai_lib PUBLIC 
+    Threads::Threads 
+    nlohmann_json::nlohmann_json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
 
 # Main executable (demo)
 add_executable(brain_ai_demo src/main.cpp)
