@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  deepseek-ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: brain-ai-deepseek-ocr:latest
+    container_name: deepseek-ocr-service
+    
+    # GPU configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # Environment variables
+    environment:
+      - DEEPSEEK_OCR_MODEL_NAME=deepseek-ai/DeepSeek-OCR
+      - DEEPSEEK_OCR_DEFAULT_RESOLUTION=base
+      - DEEPSEEK_OCR_USE_VLLM=true
+      - DEEPSEEK_OCR_DEVICE=cuda:0
+      - DEEPSEEK_OCR_LOG_LEVEL=INFO
+    
+    # Port mapping
+    ports:
+      - "8000:8000"
+    
+    # Volume mounts
+    volumes:
+      - ./app:/app/app
+      - model_cache:/root/.cache/huggingface
+      - ./logs:/app/logs
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  model_cache:
+    driver: local

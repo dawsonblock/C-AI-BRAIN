@@ -8,7 +8,17 @@ CognitiveHandler::CognitiveHandler(
     size_t episodic_capacity,
     const FusionWeights& fusion_weights
 ) : episodic_buffer_(episodic_capacity),
-    fusion_(fusion_weights) {}
+    fusion_(fusion_weights) {
+    // Initialize HNSWlib vector index with default OpenAI ada-002 dimension (1536)
+    // Can be configured for other embedding models
+    vector_index_ = std::make_unique<vector_search::HNSWIndex>(
+        1536,  // Dimension (OpenAI ada-002)
+        100000,  // Max elements
+        16,      // M parameter
+        200      // ef_construction
+    );
+    vector_index_->set_ef_search(50);  // Default search precision
+}
 
 QueryResponse CognitiveHandler::process_query(
     const std::string& query,
@@ -181,22 +191,24 @@ void CognitiveHandler::populate_semantic_network(
     }
 }
 
-// Simulated vector search (placeholder)
+// Real vector search using HNSWlib
 std::vector<ScoredResult> CognitiveHandler::vector_search(
     const std::vector<float>& query_embedding,
     size_t top_k
 ) {
-    // Real implementation would query actual vector database (HNSWlib, FAISS, etc.)
-    // This is a placeholder that returns mock results
+    // Query the HNSW index for nearest neighbors
+    auto hnsw_results = vector_index_->search(query_embedding, top_k);
     
+    // Convert HNSWlib results to ScoredResult format
     std::vector<ScoredResult> results;
+    results.reserve(hnsw_results.size());
     
-    // Generate mock results
-    for (size_t i = 0; i < top_k; ++i) {
-        float score = 0.9f - (i * 0.05f);  // Decreasing scores
-        std::string content = "Vector search result #" + std::to_string(i + 1) + 
-                             " with similarity " + std::to_string(score);
-        results.push_back(ScoredResult(content, score, "vector"));
+    for (const auto& result : hnsw_results) {
+        results.push_back(ScoredResult(
+            result.content,
+            result.similarity,
+            "vector"
+        ));
     }
     
     return results;
@@ -243,6 +255,23 @@ std::vector<std::string> CognitiveHandler::extract_concepts(const std::string& q
     }
     
     return concepts;
+}
+
+bool CognitiveHandler::index_document(
+    const std::string& doc_id,
+    const std::vector<float>& embedding,
+    const std::string& content,
+    const nlohmann::json& metadata
+) {
+    return vector_index_->add_document(doc_id, embedding, content, metadata);
+}
+
+void CognitiveHandler::batch_index_documents(
+    const std::vector<std::tuple<std::string, std::vector<float>, std::string>>& documents
+) {
+    for (const auto& [doc_id, embedding, content] : documents) {
+        vector_index_->add_document(doc_id, embedding, content);
+    }
 }
 
 } // namespace brain_ai
