@@ -55,7 +55,11 @@ endif()
 # Add tests to CTest
 add_test(NAME BrainAITests COMMAND brain_ai_tests)
 
-if(NOT GTest_FOUND)
+# Always register the new infrastructure tests if the targets exist
+if(TARGET brain_ai_monitoring_tests)
     add_test(NAME MonitoringTests COMMAND brain_ai_monitoring_tests)
+endif()
+
+if(TARGET brain_ai_resilience_tests)
     add_test(NAME ResilienceTests COMMAND brain_ai_resilience_tests)
 endif()
