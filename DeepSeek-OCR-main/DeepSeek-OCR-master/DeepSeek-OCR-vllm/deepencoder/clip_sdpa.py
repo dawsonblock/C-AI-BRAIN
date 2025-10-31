@@ -47,7 +47,6 @@ from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
 # try:
 #     from flash_attn.flash_attn_interface import mask_flash_attn_unpadded_func
 # except ImportError:
-#     mask_flash_attn_unpadded_func = None
 
 
 class LayerNormfp32(torch.nn.LayerNorm):
