@@ -2,7 +2,7 @@
 # End-to-End Test Script for Brain-AI System
 # Tests the complete pipeline: OCR Service → REST API → Document Processing → Query
 
-set -e  # Exit on error
+# set -e  # Exit on error (removed to allow all tests to run)
 
 echo "======================================"
 echo "Brain-AI End-to-End Integration Test"
