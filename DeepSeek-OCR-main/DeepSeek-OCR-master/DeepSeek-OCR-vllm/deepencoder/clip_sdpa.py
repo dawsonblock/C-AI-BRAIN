@@ -58,43 +58,49 @@ class LayerNormfp32(torch.nn.LayerNorm):
         return ret.type(orig_type)
 
 
-def get_abs_pos(abs_pos, tgt_size):
-    # abs_pos: L, C
-    # tgt_size: M
-    # return: M, C
-
-    # print(tgt_size)
-    # print(abs_pos.shape)
-    # exit()
-    dim = abs_pos.size(-1)
-    # print(dim)
-    abs_pos_new = abs_pos.squeeze(0)
-    cls_token, old_pos_embed = abs_pos_new[:1], abs_pos_new[1:]
-
-
-
-    src_size = int(math.sqrt(abs_pos_new.shape[0] - 1))
-    tgt_size = int(math.sqrt(tgt_size))
-    dtype = abs_pos.dtype
-
-    if src_size != tgt_size:
-        old_pos_embed = old_pos_embed.view(1, src_size, src_size, dim).permute(0, 3, 1,
-                                                                                    2).contiguous()
-        old_pos_embed = old_pos_embed.to(torch.float32)
-        new_pos_embed = F.interpolate(
-            old_pos_embed,
-            size=(tgt_size, tgt_size),
-            mode='bicubic',
-            antialias=True,
-            align_corners=False,
-        ).to(dtype)
-        new_pos_embed = new_pos_embed.permute(0, 2, 3, 1)
-        new_pos_embed = new_pos_embed.view(tgt_size * tgt_size, dim)
-        vision_pos_embed = torch.cat([cls_token, new_pos_embed], dim=0)
-        vision_pos_embed = vision_pos_embed.view(1, tgt_size * tgt_size + 1, dim)
-        return vision_pos_embed
+def get_abs_pos(abs_pos: torch.Tensor, seq_len: int) -> torch.Tensor:
+    # abs_pos: [1, L, C] or [L, C], L = src_hw^2 + 1 (with cls)
+    # seq_len: target sequence length including cls (H*W + 1)
+    if abs_pos.dim() == 3:
+        # [1, L, C] -> [L, C]
+        abs_pos_new = abs_pos[0]
+    elif abs_pos.dim() == 2:
+        abs_pos_new = abs_pos
     else:
-        return abs_pos
+        raise ValueError(f"Unexpected abs_pos shape: {abs_pos.shape}")
+
+    L, dim = abs_pos_new.shape
+    if L < 2:
+        raise ValueError(f"abs_pos length must be >=2 (got {L})")
+
+    # derive source/grid sizes
+    src_tokens_wo_cls = L - 1
+    src_hw = int(math.isqrt(src_tokens_wo_cls))
+    if src_hw * src_hw != src_tokens_wo_cls:
+        raise ValueError(f"Source abs_pos (L={L}) is not (H*W + 1).")
+
+    tgt_tokens_wo_cls = seq_len - 1
+    if tgt_tokens_wo_cls <= 0:
+        raise ValueError(f"seq_len must be >=2 (got {seq_len})")
+    tgt_hw = int(math.isqrt(tgt_tokens_wo_cls))
+    if tgt_hw * tgt_hw != tgt_tokens_wo_cls:
+        raise ValueError(f"Target seq_len={seq_len} is not (H*W + 1).")
+
+    cls_token = abs_pos_new[:1]         # [1, C]
+    grid_pos = abs_pos_new[1:]          # [src_hw*src_hw, C]
+
+    if src_hw == tgt_hw:
+        # return in shape [1, L, C]
+        return abs_pos_new.unsqueeze(0) if abs_pos.dim() == 2 else abs_pos
+
+    dtype = abs_pos.dtype
+    grid_pos = grid_pos.view(1, src_hw, src_hw, dim).permute(0, 3, 1, 2).contiguous().to(torch.float32)
+    resized = F.interpolate(
+        grid_pos, size=(tgt_hw, tgt_hw), mode="bicubic", antialias=True, align_corners=False
+    ).to(dtype)
+    resized = resized.permute(0, 2, 3, 1).reshape(tgt_hw * tgt_hw, dim)  # [tgt_hw*tgt_hw, C]
+    vision_pos_embed = torch.cat([cls_token, resized], dim=0).unsqueeze(0)  # [1, tgt_hw*tgt_hw+1, C]
+    return vision_pos_embed
 
 @torch.jit.script
 def quick_gelu(x):
