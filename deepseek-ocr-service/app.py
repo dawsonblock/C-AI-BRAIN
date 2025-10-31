@@ -5,7 +5,6 @@ Provides OCR endpoints compatible with Brain-AI C++ client
 """
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse
 from typing import Optional, Dict, Any
 import logging
 import time
