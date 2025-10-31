@@ -410,12 +410,8 @@ bool test_service_timeout() {
     return true;
 }
 
-// Test 10: Configuration updates
 bool test_configuration_updates() {
-    if (!is_ocr_service_available()) {
-        return false;
-    }
-    
+    OCRConfig config;
     OCRConfig config;
     config.service_url = OCR_SERVICE_URL;
     config.mode = "tiny";
