@@ -142,10 +142,13 @@ if __name__ == "__main__":
 
     os.makedirs(output_path, exist_ok=True)
 
-    for output, image in zip(outputs_list, images_path):
+    for output, image_path in zip(outputs_list, images_path):
 
         content = output.outputs[0].text
-        mmd_det_path = output_path + image.split('/')[-1].replace('.jpg', '_det.md')
+        base_name = os.path.basename(image_path)
+        file_name, _ = os.path.splitext(base_name)
+    
+        mmd_det_path = os.path.join(output_path, f"{file_name}_det.md")
 
         with open(mmd_det_path, 'w', encoding='utf-8') as afile:
             afile.write(content)
@@ -154,8 +157,8 @@ if __name__ == "__main__":
         matches_ref, mathes_other = re_match(content)
         for idx, a_match_other in enumerate(tqdm(mathes_other, desc="other")):
             content = content.replace(a_match_other, '').replace('\n\n\n\n', '\n\n').replace('\n\n\n', '\n\n').replace('<center>', '').replace('</center>', '')
-        
-        mmd_path = output_path + image.split('/')[-1].replace('.jpg', '.md')
+    
+        mmd_path = os.path.join(output_path, f"{file_name}.md")
 
         with open(mmd_path, 'w', encoding='utf-8') as afile:
             afile.write(content)
