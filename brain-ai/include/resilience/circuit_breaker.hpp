@@ -7,6 +7,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 
 namespace brain_ai {
 namespace resilience {

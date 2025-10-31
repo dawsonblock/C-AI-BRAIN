@@ -2,6 +2,7 @@
 #define BRAIN_AI_MONITORING_METRICS_HPP
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #include <chrono>
@@ -148,10 +149,10 @@ public:
     static MetricsRegistry& instance();
     
     // Get or create metrics
-    Counter& get_counter(const std::string& name);
-    Gauge& get_gauge(const std::string& name);
-    Histogram& get_histogram(const std::string& name);
-    Timer& get_timer(const std::string& name);
+    Counter& get_counter(std::string_view name);
+    Gauge& get_gauge(std::string_view name);
+    Histogram& get_histogram(std::string_view name);
+    Timer& get_timer(std::string_view name);
     
     // Get all metric names by type
     std::vector<std::string> get_counter_names() const;
@@ -195,33 +196,33 @@ private:
 // Predefined metric names
 namespace metric_names {
     // Query processing
-    constexpr const char* QUERIES_TOTAL = "queries_total";
-    constexpr const char* QUERIES_FAILED = "queries_failed";
-    constexpr const char* QUERY_LATENCY = "query_latency_us";
+    inline constexpr std::string_view QUERIES_TOTAL = "queries_total";
+    inline constexpr std::string_view QUERIES_FAILED = "queries_failed";
+    inline constexpr std::string_view QUERY_LATENCY = "query_latency_us";
     
     // Episodic buffer
-    constexpr const char* EPISODES_STORED = "episodes_stored";
-    constexpr const char* EPISODES_RETRIEVED = "episodes_retrieved";
-    constexpr const char* EPISODIC_CACHE_HITS = "episodic_cache_hits";
-    constexpr const char* EPISODIC_CACHE_MISSES = "episodic_cache_misses";
+    inline constexpr std::string_view EPISODES_STORED = "episodes_stored";
+    inline constexpr std::string_view EPISODES_RETRIEVED = "episodes_retrieved";
+    inline constexpr std::string_view EPISODIC_CACHE_HITS = "episodic_cache_hits";
+    inline constexpr std::string_view EPISODIC_CACHE_MISSES = "episodic_cache_misses";
     
     // Semantic network
-    constexpr const char* SEMANTIC_ACTIVATIONS = "semantic_activations";
-    constexpr const char* SEMANTIC_NODES = "semantic_nodes_count";
-    constexpr const char* SEMANTIC_EDGES = "semantic_edges_count";
+    inline constexpr std::string_view SEMANTIC_ACTIVATIONS = "semantic_activations";
+    inline constexpr std::string_view SEMANTIC_NODES = "semantic_nodes_count";
+    inline constexpr std::string_view SEMANTIC_EDGES = "semantic_edges_count";
     
     // Hallucination detection
-    constexpr const char* HALLUCINATIONS_DETECTED = "hallucinations_detected";
-    constexpr const char* VALIDATION_CONFIDENCE = "validation_confidence";
+    inline constexpr std::string_view HALLUCINATIONS_DETECTED = "hallucinations_detected";
+    inline constexpr std::string_view VALIDATION_CONFIDENCE = "validation_confidence";
     
     // System health
-    constexpr const char* MEMORY_USAGE_MB = "memory_usage_mb";
-    constexpr const char* CPU_USAGE_PERCENT = "cpu_usage_percent";
-    constexpr const char* THREAD_COUNT = "thread_count";
+    inline constexpr std::string_view MEMORY_USAGE_MB = "memory_usage_mb";
+    inline constexpr std::string_view CPU_USAGE_PERCENT = "cpu_usage_percent";
+    inline constexpr std::string_view THREAD_COUNT = "thread_count";
     
     // Performance
-    constexpr const char* QPS_CURRENT = "qps_current";
-    constexpr const char* THROUGHPUT_TOTAL = "throughput_total";
+    inline constexpr std::string_view QPS_CURRENT = "qps_current";
+    inline constexpr std::string_view THROUGHPUT_TOTAL = "throughput_total";
 }
 
 } // namespace monitoring
