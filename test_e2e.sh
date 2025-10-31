@@ -322,8 +322,12 @@ echo -e "Passed:       ${GREEN}$TESTS_PASSED${NC}"
 echo -e "Failed:       ${RED}$TESTS_FAILED${NC}"
 echo ""
 
-SUCCESS_RATE=$((TESTS_PASSED * 100 / TESTS_TOTAL))
-echo "Success Rate: $SUCCESS_RATE%"
+if [ "$TESTS_TOTAL" -gt 0 ]; then
+    SUCCESS_RATE=$((TESTS_PASSED * 100 / TESTS_TOTAL))
+    echo "Success Rate: $SUCCESS_RATE%"
+else
+    echo "Success Rate: N/A (no tests run)"
+fi
 echo ""
 
 if [ "$TESTS_FAILED" -eq 0 ]; then
