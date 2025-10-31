@@ -6,7 +6,7 @@ REST API wrapper for Brain-AI C++ library providing document processing and quer
 
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import logging
 import time
