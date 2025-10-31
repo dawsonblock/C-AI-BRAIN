@@ -21,21 +21,23 @@ class NoRepeatNGramLogitsProcessor(LogitsProcessor):
             return scores
 
         search_start = max(0, num_input_ids - self.window_size)
-    
-        # Create a set of n-grams in the search window for efficient lookup
-        ngrams = {tuple(input_ids[i:i+self.ngram_size]) for i in range(search_start, num_input_ids - self.ngram_size + 1)}
 
+        ngrams = {tuple(input_ids[i:i + self.ngram_size]) for i in range(search_start, num_input_ids - self.ngram_size + 1)}
         current_prefix = tuple(input_ids[-(self.ngram_size - 1):])
-    
+
         banned_tokens = set()
         for ngram in ngrams:
             if ngram[:-1] == current_prefix:
                 banned_tokens.add(ngram[-1])
 
         banned_tokens -= self.whitelist_token_ids
-    
+
         if banned_tokens:
-            scores = scores.clone()
-            scores[list(banned_tokens)] = -float("inf")
-    
+            vocab_size = scores.size(-1)
+            # Filter to valid index range to avoid IndexError
+            valid_banned = [t for t in banned_tokens if 0 <= t < vocab_size]
+            if valid_banned:
+                scores = scores.clone()
+                scores[valid_banned] = -float("inf")
+
         return scores
