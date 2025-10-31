@@ -350,7 +350,7 @@ void test_thread_safety() {
     std::atomic<int> search_count{0};
     
     for (int t = 0; t < 5; ++t) {
-        threads.emplace_back([&index, &gen, &search_count, t]() {
+        threads.emplace_back([&index, &search_count, t]() {
             std::mt19937 local_gen(42 + t);  // Use thread index for seed
             for (int i = 0; i < 20; ++i) {
                 auto query = random_embedding(64, local_gen);
