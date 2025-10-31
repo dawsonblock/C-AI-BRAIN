@@ -42,14 +42,20 @@ inline std::string json_escape(const std::string& s) {
 
 std::string HealthCheckResult::to_json() const {
     std::ostringstream oss;
+
+    // Format timestamp as ISO-8601
+    std::time_t t = std::chrono::system_clock::to_time_t(timestamp);
+    std::tm tm_buf;
+    gmtime_r(&t, &tm_buf);
+    std::ostringstream ts;
+    ts << std::put_time(&tm_buf, "%Y-%m-%dT%H:%M:%SZ");
     
     oss << "{\n";
     oss << "  \"component\": \"" << json_escape(component_name) << "\",\n";
     oss << "  \"status\": \"" << health_status_to_string(status) << "\",\n";
     oss << "  \"message\": \"" << json_escape(message) << "\",\n";
     oss << "  \"check_duration_ms\": " << check_duration_ms << ",\n";
-    oss << "  \"timestamp\": \"" << std::chrono::system_clock::to_time_t(timestamp) << "\"";
-    
+    oss << "  \"timestamp\": \"" << ts.str() << "\"";
     if (!details.empty()) {
         oss << ",\n  \"details\": {\n";
         bool first = true;
@@ -60,9 +66,7 @@ std::string HealthCheckResult::to_json() const {
         }
         oss << "\n  }";
     }
-    
     oss << "\n}";
-    
     return oss.str();
 }
 
