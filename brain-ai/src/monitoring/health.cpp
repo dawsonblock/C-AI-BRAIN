@@ -285,68 +285,25 @@ HealthCheckResult check_memory_health() {
         return result;
     }
     
-    unsigned long total_ram = info.totalram * info.mem_unit / (1024 * 1024); // MB
-    unsigned long free_ram = info.freeram * info.mem_unit / (1024 * 1024);   // MB
-                                          "Thread count within limits");
+    unsigned long total_ram = (info.totalram * info.mem_unit) / (1024 * 1024); // MB
+    unsigned long free_ram  = (info.freeram  * info.mem_unit) / (1024 * 1024); // MB
+    unsigned long used_ram  = total_ram > free_ram ? (total_ram - free_ram) : 0;
+    double usage_percent = total_ram > 0 ? (static_cast<double>(used_ram) / total_ram) * 100.0 : 0.0;
 
-        std::ifstream status_file("/proc/self/status");
-        if (!status_file.is_open()) {
-            result.status = HealthStatus::UNKNOWN;
-            result.message = "Failed to read thread info";
-            return result;
-        }
+    result.details["total_mb"] = std::to_string(total_ram);
+    result.details["free_mb"] = std::to_string(free_ram);
+    result.details["used_mb"] = std::to_string(used_ram);
+    result.details["usage_percent"] = std::to_string(static_cast<int>(usage_percent));
 
-        std::string line;
-        int thread_count = -1;
-        while (std::getline(status_file, line)) {
-            if (line.rfind("Threads:", 0) == 0) {
-                // Format: "Threads:\t<number>"
-                std::istringstream iss(line.substr(8));
-                iss >> thread_count;
-                break;
-            }
-        }
-
-        if (thread_count < 0) {
-            result.status = HealthStatus::UNKNOWN;
-            result.message = "Thread count not found";
-            return result;
-        }
-
-        result.details["thread_count"] = std::to_string(thread_count);
-
-        if (thread_count > 1000) {
-            result.status = HealthStatus::UNHEALTHY;
-            result.message = "Thread count critical: " + std::to_string(thread_count);
-        } else if (thread_count > 500) {
-            result.status = HealthStatus::DEGRADED;
-            result.message = "Thread count high: " + std::to_string(thread_count);
-        } else {
-            result.message = "Thread count normal: " + std::to_string(thread_count);
-        }
-
-        return result;
-    std::getline(stat_file, line);
-    
-    // Thread count is the 20th field
-    std::istringstream iss(line);
-    std::string field;
-    int thread_count = 0;
-    for (int i = 0; i < 20; ++i) {
-        iss >> field;
-    }
-    thread_count = std::stoi(field);
-    
-    result.details["thread_count"] = std::to_string(thread_count);
-    
-    if (thread_count > 1000) {
+    if (usage_percent > 95.0) {
         result.status = HealthStatus::UNHEALTHY;
-        result.message = "Thread count critical: " + std::to_string(thread_count);
-    } else if (thread_count > 500) {
+        result.message = "Memory usage critical: " + std::to_string(static_cast<int>(usage_percent)) + "%";
+    } else if (usage_percent > 85.0) {
         result.status = HealthStatus::DEGRADED;
-        result.message = "Thread count high: " + std::to_string(thread_count);
+        result.message = "Memory usage high: " + std::to_string(static_cast<int>(usage_percent)) + "%";
     } else {
-        result.message = "Thread count normal: " + std::to_string(thread_count);
+        result.status = HealthStatus::HEALTHY;
+        result.message = "Memory usage normal: " + std::to_string(static_cast<int>(usage_percent)) + "%";
     }
     
     return result;
