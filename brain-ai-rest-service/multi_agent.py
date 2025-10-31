@@ -382,34 +382,27 @@ Verify (JSON format):"""
             }
         ]
         
-        schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "verification",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "passed": {"type": "boolean"},
-                        "score": {"type": "number", "minimum": 0, "maximum": 1},
-                        "issues": {"type": "array", "items": {"type": "string"}},
-                        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
-                    },
-                    "required": ["passed", "score", "issues", "confidence"],
-                    "additionalProperties": False
-                }
-            }
-        }
+        # Simple JSON mode (DeepSeek doesn't support strict json_schema)
+        schema = {"type": "json_object"}
         
         result = self.llm.generate(messages, response_format=schema)
         verification = result["content"]
         
+        # Parse JSON if string
+        if isinstance(verification, str):
+            try:
+                import json
+                verification = json.loads(verification)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse verification JSON, using defaults")
+                verification = {"passed": False, "score": 0.5, "issues": ["Parse error"], "confidence": 0.5}
+        
         # Update solution
         solution.verification_result = verification
-        solution.score = verification["score"]
-        solution.confidence = verification["confidence"]
+        solution.score = verification.get("score", 0.5)
+        solution.confidence = verification.get("confidence", 0.5)
         solution.status = (
-            SolutionStatus.VERIFIED if verification["passed"] 
+            SolutionStatus.VERIFIED if verification.get("passed", False) 
             else SolutionStatus.FAILED
         )
     
@@ -469,20 +462,44 @@ Verify (JSON format):"""
         }
     
     async def _execute_code_blocks(self, content: str) -> Dict:
-        """Execute code blocks in solution (simplified)"""
-        # TODO: Implement safe code execution sandbox
-        # For now, just check syntax
+        """Execute code blocks in solution using sandbox"""
         import re
         code_blocks = re.findall(r'```python\n(.*?)\n```', content, re.DOTALL)
         
-        results = []
-        for code in code_blocks:
-            try:
-                # Syntax check only
-                compile(code, '<string>', 'exec')
-                results.append({"status": "syntax_ok", "code": code[:100]})
-            except SyntaxError as e:
-                results.append({"status": "syntax_error", "error": str(e)})
+        if not code_blocks:
+            return {"code_blocks": 0, "results": []}
         
-        return {"code_blocks": len(code_blocks), "results": results}
+        # Use code sandbox if available
+        if "code_sandbox" in self.tools:
+            sandbox = self.tools["code_sandbox"]
+            results = []
+            
+            for code in code_blocks:
+                result = sandbox.execute(code)
+                results.append({
+                    "success": result["success"],
+                    "tests_passed": result.get("tests_passed", False),
+                    "output": result.get("output", "")[:200],  # Limit output
+                    "error": result.get("error")
+                })
+            
+            return {"code_blocks": len(code_blocks), "results": results}
+        else:
+            # Fallback to syntax check
+            results = []
+            for code in code_blocks:
+                try:
+                    compile(code, '<string>', 'exec')
+                    results.append({"status": "syntax_ok", "code": code[:100]})
+                except SyntaxError as e:
+                    results.append({"status": "syntax_error", "error": str(e)})
+            
+            return {"code_blocks": len(code_blocks), "results": results}
+    
+    def _use_calculator(self, expression: str) -> Dict:
+        """Use calculator tool for math expressions"""
+        if "calculator" in self.tools:
+            calc = self.tools["calculator"]
+            return calc.evaluate(expression)
+        return {"success": False, "error": "Calculator not available"}
 

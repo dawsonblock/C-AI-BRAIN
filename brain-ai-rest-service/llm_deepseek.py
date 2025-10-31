@@ -23,8 +23,8 @@ class GenerationConfig:
 class DeepSeekRouter:
     """Intelligently route queries to appropriate DeepSeek model"""
     
-    REASONING_MODEL = "deepseek-r1"   # R1 - for complex reasoning
-    CHAT_MODEL = "deepseek-chat"      # V3 - for retrieval/chat
+    REASONING_MODEL = "deepseek-reasoner"   # R1 - for complex reasoning
+    CHAT_MODEL = "deepseek-chat"            # V3 - for retrieval/chat
     
     def select_model(
         self,
@@ -241,7 +241,12 @@ class DeepSeekClient:
             json=payload,
             timeout=self.timeout
         )
-        response.raise_for_status()
+        
+        if response.status_code != 200:
+            error_body = response.text
+            logger.error(f"DeepSeek API error (HTTP {response.status_code}): {error_body}")
+            logger.error(f"Request payload: {payload}")
+            response.raise_for_status()  # Will raise HTTPError
         
         result = response.json()
         content = result["choices"][0]["message"]["content"]
@@ -285,40 +290,8 @@ class DeepSeekClient:
                 "reasoning": str  # If reasoning model used
             }
         """
-        # JSON schema for structured output
-        schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "answer_with_citations",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "answer": {
-                            "type": "string",
-                            "description": "The answer to the question"
-                        },
-                        "citations": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Relevant citations from context"
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1,
-                            "description": "Confidence score 0-1"
-                        },
-                        "refuse": {
-                            "type": "boolean",
-                            "description": "True if insufficient evidence to answer"
-                        }
-                    },
-                    "required": ["answer", "citations", "confidence", "refuse"],
-                    "additionalProperties": False
-                }
-            }
-        }
+        # Simple JSON mode (DeepSeek doesn't support strict json_schema)
+        schema = {"type": "json_object"}
         
         # Cite-first prompt
         system_prompt = f"""You are a precise assistant that answers ONLY from provided context.
@@ -330,7 +303,13 @@ Rules:
 4. Set refuse=true if evidence is insufficient (confidence < {evidence_threshold})
 5. Be concise and accurate
 
-Output must be valid JSON matching the schema."""
+Output must be valid JSON with this exact structure:
+{{
+  "answer": "your answer here",
+  "citations": ["quote 1", "quote 2"],
+  "confidence": 0.0-1.0,
+  "refuse": true/false
+}}"""
         
         messages = [
             {"role": "system", "content": system_prompt},
@@ -346,11 +325,25 @@ Output must be valid JSON matching the schema."""
             response_format=schema
         )
         
-        # Add model info
-        response = result["content"]
-        response["model_used"] = result["model"]
+        # Parse JSON response
+        content = result["content"]
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse JSON response, returning raw: {e}")
+                # Fallback response
+                content = {
+                    "answer": content,
+                    "citations": [],
+                    "confidence": 0.5,
+                    "refuse": True
+                }
         
-        return response
+        # Add model info
+        content["model_used"] = result["model"]
+        
+        return content
     
     def get_usage_stats(self) -> Dict:
         """Get usage statistics"""

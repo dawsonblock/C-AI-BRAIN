@@ -67,6 +67,7 @@ if(BUILD_PYTHON_BINDINGS)
             GIT_TAG        v2.11.1
         )
         FetchContent_MakeAvailable(pybind11)
+        set(pybind11_FOUND TRUE)  # Mark as found after fetch
     endif()
 endif()
 

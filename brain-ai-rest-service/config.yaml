@@ -157,13 +157,6 @@ performance:
   rate_limit:
     enabled: false
     requests_per_minute: 60
-    
-# Security
-security:
-  api_key_required: false
-  cors_enabled: true
-  cors_origins: ["*"]
-  max_request_size_mb: 100
 
 # Persistence
 persistence:

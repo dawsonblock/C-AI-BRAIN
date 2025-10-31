@@ -111,6 +111,26 @@ from chunker import SmartChunker
 from facts_store import FactsStore
 from llm_deepseek import DeepSeekClient
 from multi_agent import MultiAgentOrchestrator
+from sentence_transformers import SentenceTransformer
+from persistence import PersistenceManager, AutoSaveMixin
+from tools import TOOL_REGISTRY
+
+# Embedding model for text → vector conversion
+embedding_model = None
+try:
+    embedding_model_name = get_config('embeddings.model', 'all-mpnet-base-v2')
+    embedding_model = SentenceTransformer(embedding_model_name)
+    logger.info(f"✅ Embedding model initialized ({embedding_model_name})")
+except Exception as e:
+    logger.error(f"❌ Embedding model failed: {e}")
+
+# Persistence manager
+persistence_manager = PersistenceManager(
+    data_dir=get_config('persistence.data_dir', 'data/persistence')
+)
+
+# Auto-save tracker
+auto_saver = AutoSaveMixin(persistence_manager, save_interval_docs=10)
 
 # Re-ranker for retrieval quality
 reranker = None
@@ -152,7 +172,7 @@ if os.getenv(api_key_env):
 else:
     logger.warning(f"⚠️  {api_key_env} not set - LLM features disabled")
 
-# Multi-agent orchestrator
+# Multi-agent orchestrator with tools
 multi_agent = None
 if deepseek_client and get_config('multi_agent.enabled', True):
     n_solvers = int(get_config('multi_agent.solvers.n_solvers', 3))
@@ -160,9 +180,17 @@ if deepseek_client and get_config('multi_agent.enabled', True):
     multi_agent = MultiAgentOrchestrator(
         llm_client=deepseek_client,
         n_solvers=n_solvers,
-        verification_threshold=verification_threshold
+        verification_threshold=verification_threshold,
+        tools=TOOL_REGISTRY
     )
-    logger.info(f"✅ Multi-agent orchestrator initialized (n_solvers={n_solvers})")
+    logger.info(f"✅ Multi-agent orchestrator initialized (n_solvers={n_solvers}, tools={list(TOOL_REGISTRY.keys())})")
+
+# Load persisted data if available
+if cognitive_handler and USE_CPP_BACKEND:
+    if persistence_manager.exists():
+        logger.info("Loading persisted data...")
+        results = persistence_manager.load_all(cognitive_handler)
+        logger.info(f"Persistence loaded: {results}")
 # ==================== Request/Response Models ====================
 
 class OCRConfig(BaseModel):
@@ -614,12 +642,59 @@ async def search_similar(request: SearchRequest):
 
 @app.post("/api/v1/index", response_model=IndexResponse)
 async def index_document(request: IndexRequest):
-    """Index a document in the vector store"""
+    """Index a document in the vector store (requires embedding)"""
     logger.info(f"Indexing document: {request.doc_id}")
     
     result = await brain_ai.index_document(request)
     
     return result
+
+@app.post("/api/v1/index_with_text")
+async def index_with_text(request: dict):
+    """Index a document by auto-generating embeddings from text"""
+    doc_id = request.get("doc_id")
+    text = request.get("text") or request.get("content")
+    metadata = request.get("metadata", {})
+    
+    if not doc_id or not text:
+        raise HTTPException(status_code=400, detail="doc_id and text required")
+    
+    if not embedding_model:
+        raise HTTPException(status_code=503, detail="Embedding model not available")
+    
+    if not cognitive_handler or not USE_CPP_BACKEND:
+        raise HTTPException(status_code=503, detail="C++ backend not available")
+    
+    try:
+        start_time = time.time()
+        
+        # Generate embedding
+        embedding = embedding_model.encode(text, convert_to_numpy=True).tolist()
+        
+        # Index in C++ backend
+        success = cognitive_handler.index_document(
+            doc_id=doc_id,
+            embedding=embedding,
+            content=text,
+            metadata=metadata
+        )
+        
+        processing_time = int((time.time() - start_time) * 1000)
+        
+        # Auto-save periodically
+        auto_saver.maybe_save(cognitive_handler)
+        
+        return {
+            "success": success,
+            "doc_id": doc_id,
+            "embedding_dim": len(embedding),
+            "text_length": len(text),
+            "processing_time_ms": processing_time
+        }
+            
+    except Exception as e:
+        logger.error(f"Indexing with text failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/episodes", response_model=EpisodeResponse)
 async def add_episode(request: EpisodeRequest):
@@ -684,9 +759,37 @@ async def answer_question(request: dict):
             cached_fact["processing_time_ms"] = int((time.time() - start_time) * 1000)
             return cached_fact
         
-        # TODO: Generate embeddings and retrieve context
-        # For now, use mock context
-        context = "Mock retrieved context..."
+        # Generate query embedding and retrieve context
+        if not embedding_model:
+            raise HTTPException(status_code=503, detail="Embedding model not available")
+        
+        query_embedding = embedding_model.encode(question, convert_to_numpy=True).tolist()
+        
+        # Retrieve from vector store
+        context_chunks = []
+        if cognitive_handler and USE_CPP_BACKEND:
+            # Build QueryConfig
+            import brain_ai_py
+            config = brain_ai_py.QueryConfig()
+            config.use_episodic = False
+            config.use_semantic = False
+            config.top_k_results = int(get_config('retrieval.vector_search.top_k', 50))
+            
+            # Query C++ backend
+            response = cognitive_handler.process_query(
+                query=question,
+                query_embedding=query_embedding,
+                config=config
+            )
+            
+            # Extract context (simplified - in production, parse response properly)
+            context = response.response if hasattr(response, 'response') else "No context retrieved."
+            
+            # TODO: Add re-ranking if reranker is available
+            # if reranker and context_chunks:
+            #     context_chunks = reranker.rerank_with_docs(question, context_chunks, top_k=10)
+        else:
+            context = "No vector store available - using empty context."
         
         # Generate answer
         if use_multi_agent and multi_agent:
@@ -702,7 +805,14 @@ async def answer_question(request: dict):
             )
             result["mode"] = "single_agent"
         else:
-            raise HTTPException(status_code=503, detail="LLM service unavailable")
+            # Fallback: return context without LLM
+            result = {
+                "answer": f"LLM not available. Retrieved context: {context[:200]}...",
+                "citations": [],
+                "confidence": 0.5,
+                "refuse": True
+            }
+            result["mode"] = "no_llm"
         
         # Store in facts if high confidence
         if result.get("confidence", 0) >= facts_store.confidence_threshold:
@@ -779,22 +889,57 @@ async def get_system_status():
         "timestamp": datetime.now().isoformat(),
         "components": {
             "cpp_backend": USE_CPP_BACKEND,
+            "embedding_model": embedding_model is not None,
             "reranker": reranker is not None,
             "facts_store": True,
             "deepseek_llm": deepseek_client is not None,
-            "multi_agent": multi_agent is not None
+            "multi_agent": multi_agent is not None,
+            "persistence": True,
+            "tools": list(TOOL_REGISTRY.keys())
         }
     }
     
     if cognitive_handler and USE_CPP_BACKEND:
         status["cpp_stats"] = cognitive_handler.get_stats()
     
-    if deepseek_client:
-        status["llm_stats"] = deepseek_client.get_usage_stats()
-    
     status["facts_stats"] = facts_store.get_stats()
+    status["persistence_info"] = persistence_manager.get_info()
     
     return status
+
+@app.post("/api/v1/persistence/save")
+async def save_persistence():
+    """Manually trigger persistence save"""
+    if not cognitive_handler:
+        raise HTTPException(status_code=503, detail="C++ backend not available")
+    
+    try:
+        results = persistence_manager.save_all(cognitive_handler, facts_store)
+        return {
+            "success": True,
+            "results": results,
+            "info": persistence_manager.get_info()
+        }
+    except Exception as e:
+        logger.error(f"Save failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/persistence/load")
+async def load_persistence():
+    """Manually trigger persistence load"""
+    if not cognitive_handler:
+        raise HTTPException(status_code=503, detail="C++ backend not available")
+    
+    try:
+        results = persistence_manager.load_all(cognitive_handler)
+        return {
+            "success": True,
+            "results": results,
+            "info": persistence_manager.get_info()
+        }
+    except Exception as e:
+        logger.error(f"Load failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

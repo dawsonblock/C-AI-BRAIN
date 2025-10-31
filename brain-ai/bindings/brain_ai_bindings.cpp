@@ -79,12 +79,34 @@ PYBIND11_MODULE(brain_ai_py, m) {
              py::arg("config") = QueryConfig(),
              "Process query through complete cognitive pipeline")
         
-        .def("index_document", &CognitiveHandler::index_document,
-             py::arg("doc_id"),
-             py::arg("embedding"),
-             py::arg("content"),
-             py::arg("metadata") = nlohmann::json(),
-             "Index document in vector store with metadata")
+        .def("index_document", [](CognitiveHandler& h,
+                                  const std::string& doc_id,
+                                  const std::vector<float>& embedding,
+                                  const std::string& content,
+                                  py::dict metadata_dict = py::dict()) {
+            // Convert py::dict to nlohmann::json
+            nlohmann::json metadata = nlohmann::json::object();
+            for (auto item : metadata_dict) {
+                std::string key = py::str(item.first);
+                py::object value = py::reinterpret_borrow<py::object>(item.second);
+                if (py::isinstance<py::str>(value)) {
+                    metadata[key] = value.cast<std::string>();
+                } else if (py::isinstance<py::int_>(value)) {
+                    metadata[key] = value.cast<int>();
+                } else if (py::isinstance<py::float_>(value)) {
+                    metadata[key] = value.cast<double>();
+                } else if (py::isinstance<py::bool_>(value)) {
+                    metadata[key] = value.cast<bool>();
+                } else {
+                    metadata[key] = py::str(value).cast<std::string>();
+                }
+            }
+            return h.index_document(doc_id, embedding, content, metadata);
+        }, py::arg("doc_id"),
+           py::arg("embedding"),
+           py::arg("content"),
+           py::arg("metadata") = py::dict(),
+           "Index document in vector store with metadata")
         
         .def("batch_index_documents", [](CognitiveHandler& h, py::list docs) {
             std::vector<std::tuple<std::string, std::vector<float>, std::string>> documents;
@@ -109,16 +131,14 @@ PYBIND11_MODULE(brain_ai_py, m) {
         .def("save", [](CognitiveHandler& h, const std::string& path) {
             // TODO: Implement full serialization
             // For now, just save vector index
-            h.vector_index().save_index(path + "/vector_index.bin");
-            return true;
+            return h.vector_index().save(path + "/vector_index.bin");
         }, py::arg("path"),
         "Save cognitive handler state to disk")
         
         .def("load", [](CognitiveHandler& h, const std::string& path) {
             // TODO: Implement full deserialization
             // For now, just load vector index
-            h.vector_index().load_index(path + "/vector_index.bin");
-            return true;
+            return h.vector_index().load(path + "/vector_index.bin");
         }, py::arg("path"),
         "Load cognitive handler state from disk")
         
