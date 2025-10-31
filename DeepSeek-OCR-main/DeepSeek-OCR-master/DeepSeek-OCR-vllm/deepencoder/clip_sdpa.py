@@ -62,7 +62,6 @@ def get_abs_pos(abs_pos: torch.Tensor, seq_len: int) -> torch.Tensor:
     # abs_pos: [1, L, C] or [L, C], L = src_hw^2 + 1 (with cls)
     # seq_len: target sequence length including cls (H*W + 1)
     if abs_pos.dim() == 3:
-        # [1, L, C] -> [L, C]
         abs_pos_new = abs_pos[0]
     elif abs_pos.dim() == 2:
         abs_pos_new = abs_pos
@@ -73,34 +72,42 @@ def get_abs_pos(abs_pos: torch.Tensor, seq_len: int) -> torch.Tensor:
     if L < 2:
         raise ValueError(f"abs_pos length must be >=2 (got {L})")
 
-    # derive source/grid sizes
+    # source grid size
     src_tokens_wo_cls = L - 1
     src_hw = int(math.isqrt(src_tokens_wo_cls))
     if src_hw * src_hw != src_tokens_wo_cls:
         raise ValueError(f"Source abs_pos (L={L}) is not (H*W + 1).")
 
-    tgt_tokens_wo_cls = seq_len - 1
-    if tgt_tokens_wo_cls <= 0:
-        raise ValueError(f"seq_len must be >=2 (got {seq_len})")
-    tgt_hw = int(math.isqrt(tgt_tokens_wo_cls))
-    if tgt_hw * tgt_hw != tgt_tokens_wo_cls:
-        raise ValueError(f"Target seq_len={seq_len} is not (H*W + 1).")
+    # target grid size (best-effort)
+    tgt_tokens_wo_cls = max(1, seq_len - 1)
+    tgt_hw_float = math.sqrt(tgt_tokens_wo_cls)
+    tgt_hw = max(1, int(round(tgt_hw_float)))
+    tgt_tokens_wo_cls_fixed = tgt_hw * tgt_hw
+    tgt_len_fixed = tgt_tokens_wo_cls_fixed + 1
 
     cls_token = abs_pos_new[:1]         # [1, C]
     grid_pos = abs_pos_new[1:]          # [src_hw*src_hw, C]
 
     if src_hw == tgt_hw:
-        # return in shape [1, L, C]
-        return abs_pos_new.unsqueeze(0) if abs_pos.dim() == 2 else abs_pos
+        out = abs_pos_new
+    else:
+        dtype = abs_pos.dtype
+        grid_pos_4d = grid_pos.view(1, src_hw, src_hw, dim).permute(0, 3, 1, 2).contiguous().to(torch.float32)
+        resized = F.interpolate(
+            grid_pos_4d, size=(tgt_hw, tgt_hw), mode="bicubic", antialias=True, align_corners=False
+        ).to(dtype)
+        resized = resized.permute(0, 2, 3, 1).reshape(tgt_tokens_wo_cls_fixed, dim)  # [tgt_hw*tgt_hw, C]
+        out = torch.cat([cls_token, resized], dim=0)  # [tgt_hw*tgt_hw+1, C]
 
-    dtype = abs_pos.dtype
-    grid_pos = grid_pos.view(1, src_hw, src_hw, dim).permute(0, 3, 1, 2).contiguous().to(torch.float32)
-    resized = F.interpolate(
-        grid_pos, size=(tgt_hw, tgt_hw), mode="bicubic", antialias=True, align_corners=False
-    ).to(dtype)
-    resized = resized.permute(0, 2, 3, 1).reshape(tgt_hw * tgt_hw, dim)  # [tgt_hw*tgt_hw, C]
-    vision_pos_embed = torch.cat([cls_token, resized], dim=0).unsqueeze(0)  # [1, tgt_hw*tgt_hw+1, C]
-    return vision_pos_embed
+    # Adjust to requested seq_len (truncate or pad by repeating last token)
+    if out.size(0) >= seq_len:
+        out = out[:seq_len]
+    else:
+        pad_len = seq_len - out.size(0)
+        pad = out[-1:].expand(pad_len, -1)
+        out = torch.cat([out, pad], dim=0)
+
+    return out.unsqueeze(0)
 
 @torch.jit.script
 def quick_gelu(x):
