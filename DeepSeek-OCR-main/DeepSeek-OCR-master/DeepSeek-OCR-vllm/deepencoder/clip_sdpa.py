@@ -134,7 +134,6 @@ class CLIPVisionEmbeddings(nn.Module):
 
 
         if patch_embeds is not None:
-            patch_embeds = patch_embeds
             # print(patch_embeds.shape)
         else:
             patch_embeds = self.patch_embedding(pixel_values)  
