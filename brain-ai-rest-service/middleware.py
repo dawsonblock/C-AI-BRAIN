@@ -17,6 +17,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 logger = logging.getLogger(__name__)
 
 
+try:
+    from metrics import metrics as metrics_collector
+except ImportError:  # pragma: no cover - metrics optional during unit tests
+    metrics_collector = None
+
+
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce API key authentication"""
     
@@ -90,23 +96,40 @@ class RequestTrackingMiddleware(BaseHTTPMiddleware):
             self.request_count += 1
             request_id = self.request_count
 
+        response = None
+        status_code = None
+        error_happened = False
+        latency = 0.0
+
         try:
             response = await call_next(request)
+            status_code = response.status_code
         except Exception as exc:
-            with self._lock:
-                self.error_count += 1
+            error_happened = True
+            status_code = getattr(exc, "status_code", 500)
             logger.error("Request failed: %s", exc)
             raise
+        finally:
+            latency = time.time() - start_time
 
-        latency = time.time() - start_time
+            with self._lock:
+                self.total_latency += latency
+                if error_happened or (status_code is not None and status_code >= 400):
+                    self.error_count += 1
 
-        with self._lock:
-            self.total_latency += latency
-            if response.status_code >= 400:
-                self.error_count += 1
+            if metrics_collector:
+                result_label = "error" if error_happened or (status_code is not None and status_code >= 400) else "success"
+                metric_labels = {"method": request.method, "result": result_label}
+                metrics_collector.inc_counter("brain_ai_requests_total", labels=metric_labels)
+                metrics_collector.observe_histogram(
+                    "brain_ai_request_latency_seconds",
+                    latency,
+                    labels=metric_labels,
+                )
 
-        response.headers["X-Request-ID"] = str(request_id)
-        response.headers["X-Processing-Time-Ms"] = str(int(latency * 1000))
+        if response is not None:
+            response.headers["X-Request-ID"] = str(request_id)
+            response.headers["X-Processing-Time-Ms"] = str(int(latency * 1000))
 
         return response
 

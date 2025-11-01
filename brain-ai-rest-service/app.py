@@ -731,7 +731,10 @@ async def get_metrics(request: Request):
     
     if facts_store:
         facts_stats = facts_store.get_stats()
-        metrics.set_gauge("brain_ai_facts_count", facts_stats.get("fact_count", 0))
+        fact_count = facts_stats.get("total_facts")
+        if fact_count is None:
+            fact_count = facts_stats.get("fact_count", 0)
+        metrics.set_gauge("brain_ai_facts_count", fact_count)
     
     # Request stats
     tracker = get_request_tracker()
