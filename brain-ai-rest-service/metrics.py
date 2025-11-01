@@ -1,5 +1,12 @@
 """
-Prometheus metrics for Brain-AI REST API
+Prometheus-style metrics helper for the Brain-AI REST API.
+
+Tracked series (by convention):
+- Counter ``brain_ai_requests_total`` labelled by ``method`` and ``result`` capturing
+  high-level request throughput.
+- Histogram ``brain_ai_request_latency_seconds`` (same labels) storing raw latency
+  samples for percentile export.
+- Various gauges populated by the C++ bindings, facts store, and other subsystems.
 """
 import time
 import logging

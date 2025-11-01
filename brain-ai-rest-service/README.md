@@ -248,6 +248,19 @@ Response:
 }
 ```
 
+
+### Monitoring & Metrics
+
+**GET /metrics**
+Prometheus-formatted scrape point (disabled by default—set `monitoring.prometheus_enabled: true` in `config.yaml`).
+
+Exports include:
+- `brain_ai_requests_total{method="POST",result="success"}` – per-method request counter
+- `brain_ai_request_latency_seconds` – raw latency samples with p50 / p95 / p99 summaries
+- `brain_ai_facts_count` – total cached high-confidence facts
+- Gauges reflecting vector index, episodic buffer, and semantic graph sizes when the C++ backend is active
+
+
 **GET /api/v1/stats**
 Service statistics.
 
