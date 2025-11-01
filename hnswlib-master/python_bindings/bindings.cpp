@@ -392,19 +392,19 @@ class Index {
         }
 
         py::capsule free_when_done_l0(data_level0_npy, [](void* f) {
-            delete[] f;
+            free(f);
             });
         py::capsule free_when_done_lvl(element_levels_npy, [](void* f) {
-            delete[] f;
+            free(f);
             });
         py::capsule free_when_done_lb(label_lookup_key_npy, [](void* f) {
-            delete[] f;
+            free(f);
             });
         py::capsule free_when_done_id(label_lookup_val_npy, [](void* f) {
-            delete[] f;
+            free(f);
             });
         py::capsule free_when_done_ll(link_list_npy, [](void* f) {
-            delete[] f;
+            free(f);
             });
 
         /*  TODO: serialize state of random generators appr_alg->level_generator_ and appr_alg->update_probability_generator_  */
