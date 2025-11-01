@@ -39,13 +39,37 @@ std::vector<float> to_vector(const py::object &obj) {
     if (obj.is_none()) {
         return result;
     }
-    result.reserve(kEmbeddingDim);
+    // Enforce iterability and bounded length before allocation/iteration
+    if (!py::isinstance<py::iterable>(obj)) {
+        throw std::invalid_argument("Embedding must be an iterable");
+    }
+    // If a __len__ is available, verify size up-front
+    try {
+        auto len_obj = obj.attr("__len__")();
+        std::size_t n = py::cast<std::size_t>(len_obj);
+        if (n != kEmbeddingDim) {
+            throw std::invalid_argument("Embedding dimension mismatch: expected "
+                                        + std::to_string(kEmbeddingDim) + ", got "
+                                        + std::to_string(n));
+        }
+        // Guard against pathological values
+        if (n > 1'000'000) {
+            throw std::invalid_argument("Embedding length unreasonably large");
+        }
+        result.reserve(n);
+    } catch (const py::error_already_set &) {
+        // No __len__; fall back to strict counting with an upper bound
+        result.reserve(kEmbeddingDim);
+    }
     for (auto item : py::iter(obj)) {
         float v = py::cast<float>(item);
         if (std::isnan(v) || std::isinf(v)) {
             throw std::invalid_argument("Embedding contains NaN/Inf values");
         }
         result.push_back(v);
+        if (result.size() > kEmbeddingDim) {
+            throw std::invalid_argument("Embedding dimension mismatch: too many elements");
+        }
     }
     if (!result.empty() && result.size() != kEmbeddingDim) {
         throw std::invalid_argument("Embedding dimension mismatch: expected "
