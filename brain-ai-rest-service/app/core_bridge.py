@@ -133,9 +133,16 @@ class CoreBridge:
         payload = list(embedding)
         if self._module:
             try:
-                results = self._module.search(query, top_k, payload)
-            except TypeError:
-                results = self._module.search(query, top_k)
+                if payload:
+                    results = self._module.search(query, top_k, payload)
+                else:
+                    results = self._module.search(query, top_k)
+            except TypeError as exc:
+                # If we had a payload, this is a contract bug; surface it.
+                if payload:
+                    raise TypeError(f"pybind search failed with embedding for query={query!r}: {exc}") from exc
+                # Otherwise, rethrow since even the no-embedding path failed.
+                raise
             if results:
                 return [(doc_id, float(score)) for doc_id, score in results]
 
