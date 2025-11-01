@@ -21,7 +21,8 @@ RUN adduser --uid 1001 --disabled-password --gecos "" brain
 
 WORKDIR /srv/app
 COPY brain-ai-rest-service /srv/app/brain-ai-rest-service
-COPY --from=builder /opt/build/brain-ai/build/python/brain_ai_core*.so /usr/local/lib/python3.11/site-packages/
+ENV PYTHONPATH=/srv/app/brain-ai-rest-service:${PYTHONPATH}
+COPY --from=builder /opt/build/brain-ai/build/python/brain_ai_core*.so /srv/app/brain-ai-rest-service/
 
 RUN pip install --no-cache-dir -r brain-ai-rest-service/requirements.txt
 
