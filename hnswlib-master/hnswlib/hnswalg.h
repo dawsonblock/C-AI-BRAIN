@@ -916,9 +916,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     * Remove the deleted mark of the node.
     */
     void unmarkDeletedInternal(tableint internalId) {
-        assert(internalId < cur_element_count);
-        if (isMarkedDeleted(internalId)) {
-            unsigned char *ll_cur = ((unsigned char *)get_linklist0(internalId)) + 2;
+            *ll_cur &= ~DELETE_MARK;
+            num_deleted_.fetch_sub(1);
+            if (allow_replace_deleted_) {
             *ll_cur &= ~DELETE_MARK;
             num_deleted_ -= 1;
             if (allow_replace_deleted_) {
