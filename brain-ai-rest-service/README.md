@@ -264,6 +264,14 @@ Tuning:
 - `BRAIN_AI_METRICS_HIST_MAX_SAMPLES` controls the rolling window size for latency histograms (default 1024, capped at 100k, non-positive values ignored).
 - `monitoring.histogram_max_samples` (in `config.yaml`) provides the same override via configuration.
 
+Runtime adjustment:
+```bash
+curl -X POST http://localhost:5001/api/v1/monitoring/histogram_window \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $BRAIN_AI_API_KEY" \
+  -d '{"sample_size": 2048}'
+```
+
 
 **GET /api/v1/stats**
 Service statistics.

@@ -372,6 +372,9 @@ class OCRConfig(BaseModel):
     max_tokens: int = 8192
     temperature: float = 0.0
 
+class HistogramConfigRequest(BaseModel):
+    sample_size: int
+
 class DocumentProcessRequest(BaseModel):
     doc_id: str
     file_path: Optional[str] = None
@@ -764,6 +767,25 @@ async def get_metrics(request: Request):
         metrics.set_gauge("brain_ai_avg_latency_ms", tracker_stats["avg_latency_ms"])
     
     return PlainTextResponse(content=metrics.export_prometheus(), media_type="text/plain")
+
+@api_router.post("/monitoring/histogram_window")
+async def configure_histogram_window(request: HistogramConfigRequest):
+    """Adjust histogram rolling window for metrics latency tracking."""
+    if metrics is None:
+        raise HTTPException(status_code=503, detail="Metrics subsystem unavailable")
+
+    try:
+        metrics.set_histogram_max_samples(request.sample_size)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    logger.info("Histogram sample window adjusted to %s", metrics.histogram_max_samples)
+
+    return {
+        "success": True,
+        "histogram_max_samples": metrics.histogram_max_samples,
+        "note": "Setting applies to future histogram observations"
+    }
 
 @api_router.get("/stats", response_model=StatsResponse)
 async def get_statistics():
