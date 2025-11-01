@@ -24,12 +24,17 @@ def _resolve_histogram_max_samples() -> int:
     if env_value is None:
         return 1024
 
+    raw = str(env_value).strip()
+    s = raw.lower().replace("_", "")
     try:
-        s = str(env_value).strip().lower().replace("_", "")
         if s.endswith("k"):
             base = s[:-1]
+            if not base.isdigit():
+                raise ValueError(f"invalid numeric part in '{raw}'")
             parsed = int(base) * 1000
         else:
+            if not s.isdigit():
+                raise ValueError(f"invalid numeric value '{raw}'")
             parsed = int(s)
         if parsed <= 0:
             raise ValueError("histogram max samples must be positive")
@@ -37,7 +42,7 @@ def _resolve_histogram_max_samples() -> int:
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning(
             "Invalid BRAIN_AI_METRICS_HIST_MAX_SAMPLES=%s (%s); defaulting to 1024",
-            env_value,
+            raw,
             exc,
         )
         return 1024
