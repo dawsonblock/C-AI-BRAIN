@@ -143,7 +143,7 @@ async def require_api_key(
     """Ensure every request presents the configured API key."""
     expected = os.getenv(API_KEY_ENV)
     if not expected:
-        logger.error("❌ API key environment variable %s not set", API_KEY_ENV)
+        logger.error("❌ API key not configured")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service misconfigured: API key missing",
@@ -154,7 +154,7 @@ async def require_api_key(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing API key",
-            headers={"WWW-Authenticate": "ApiKey"},
+            headers={"WWW-Authenticate": 'Bearer, X-API-Key'},
         )
 
     if not secrets.compare_digest(provided, expected):
