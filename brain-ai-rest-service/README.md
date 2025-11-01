@@ -311,6 +311,13 @@ python app.py
 # Service runs on http://localhost:5001
 ```
 
+### Monitoring Endpoint Tests
+
+```bash
+# Requires FastAPI test dependencies (install via `pip install fastapi uvicorn` if not already available)
+python -m unittest discover tests
+```
+
 ### Test Endpoints
 
 ```bash
