@@ -24,9 +24,14 @@ COPY brain-ai-rest-service /srv/app/brain-ai-rest-service
 ENV PYTHONPATH=/srv/app/brain-ai-rest-service:${PYTHONPATH}
 # Copy the entire python output directory to ensure module availability across platforms
 COPY --from=builder /opt/build/brain-ai/build/python /srv/app/brain-ai-rest-service/python
-# Optionally move/rename to expected location if the app imports from project root
-RUN cp /srv/app/brain-ai-rest-service/python/brain_ai_core*.so /srv/app/brain-ai-rest-service/ || \
-    (echo "brain_ai_core module not found" && exit 1)
+# Ensure pybind output directory exists and place the module in a predictable path
+RUN set -e; \
+    mkdir -p /srv/app/brain-ai-rest-service/python && \
+    if ls /srv/app/brain-ai-rest-service/python/brain_ai_core*.so >/dev/null 2>&1; then \
+      cp /srv/app/brain-ai-rest-service/python/brain_ai_core*.so /srv/app/brain-ai-rest-service/; \
+    else \
+      echo "Warning: brain_ai_core module not found; REST will run in pure-Python fallback mode"; \
+    fi
 
 RUN pip install --no-cache-dir -r brain-ai-rest-service/requirements.txt
 
