@@ -788,7 +788,6 @@ async def configure_histogram_window(request: HistogramConfigRequest):
 
 @api_router.get("/monitoring/histogram_window", response_model=HistogramConfigResponse, dependencies=[Depends(require_api_key)])
 async def get_histogram_window():
-    """Report current histogram sample window size."""
     if metrics is None:
         raise HTTPException(status_code=503, detail="Metrics subsystem unavailable")
 
