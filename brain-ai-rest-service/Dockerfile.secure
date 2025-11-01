@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Install Brain-AI wheel if present
-RUN if compgen -G "wheels/brain_ai-*.whl" > /dev/null; then \
+RUN if ls wheels/brain_ai-*.whl >/dev/null 2>&1; then \
         pip install --no-cache-dir wheels/brain_ai-*.whl; \
     else \
         echo "[WARN] brain_ai wheel not found in wheels/ - install at runtime"; \
