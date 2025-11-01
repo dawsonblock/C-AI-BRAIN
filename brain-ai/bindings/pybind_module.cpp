@@ -118,6 +118,7 @@ void save_index(const std::string &path) {
 
 void load_index(const std::string &path) {
     auto &manager = ensure_manager();
+    std::scoped_lock<std::mutex> lock(g_mutex);
     manager.load(path);
 }
 
