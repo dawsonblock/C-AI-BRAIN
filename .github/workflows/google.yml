@@ -47,6 +47,27 @@ env:
   REPOSITORY: 'samples' # TODO: update to your Artifact Registry docker repository name
   IMAGE: 'static-site'
   WORKLOAD_IDENTITY_PROVIDER: 'projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider' # TODO: update to your workload identity provider
+jobs:
+  setup-build-publish-deploy:
+    name: 'Setup, Build, Publish, and Deploy'
+    runs-on: 'ubuntu-latest'
+    environment: 'production'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - name: 'Validate required configuration'
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "${PROJECT_ID}" != "my-project" ]] || fail "PROJECT_ID is not set"
+          [[ -n "${GCP_SERVICE_ACCOUNT:-}" ]] || fail "GCP_SERVICE_ACCOUNT is not set"
+          [[ "${WORKLOAD_IDENTITY_PROVIDER}" != "projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider" ]] || fail "WORKLOAD_IDENTITY_PROVIDER is not set"
+          [[ -n "${GAR_LOCATION}" ]] || fail "GAR_LOCATION is not set"
+          [[ -n "${GKE_CLUSTER}" ]] || fail "GKE_CLUSTER is not set"
+          [[ -n "${GKE_ZONE}" ]] || fail "GKE_ZONE is not set"
+          [[ -n "${REPOSITORY}" ]] || fail "REPOSITORY is not set"
+          [[ -n "${IMAGE}" ]] || fail "IMAGE is not set"
 
 jobs:
   setup-build-publish-deploy:
