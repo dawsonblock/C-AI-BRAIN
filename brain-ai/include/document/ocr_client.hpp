@@ -27,7 +27,7 @@ struct OCRResult {
  * @brief Configuration for OCR processing
  */
 struct OCRConfig {
-    std::string service_url = "http://localhost:8000";  // DeepSeek-OCR service URL
+    std::string service_url = "http://deepseek-ocr:8000";  // DeepSeek-OCR service URL
     std::string mode = "base";                          // Resolution: tiny|small|base|large|gundam
     std::string task = "markdown";                      // Task: ocr|markdown|figure|reference|describe
     int max_tokens = 8192;                              // Maximum tokens to generate
@@ -35,6 +35,16 @@ struct OCRConfig {
     std::chrono::seconds timeout{30};                   // Request timeout
     int max_retries = 3;                                // Max retry attempts
     std::chrono::milliseconds retry_delay{1000};        // Delay between retries
+    std::chrono::milliseconds connect_timeout{1000};    // TCP connect timeout (ms)
+    std::chrono::milliseconds read_timeout{5000};       // Read timeout (ms)
+    std::chrono::milliseconds write_timeout{5000};      // Write timeout (ms)
+    std::vector<std::string> allowed_hosts = {
+        "deepseek-ocr",
+        "brain-ai-deepseek-ocr",
+        "localhost",
+        "127.0.0.1",
+        "ocr-service"
+    }; // SSRF protection allow-list
     
     OCRConfig() = default;
 };

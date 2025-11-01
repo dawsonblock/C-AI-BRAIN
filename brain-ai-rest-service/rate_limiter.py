@@ -5,9 +5,9 @@ Rate limiting middleware for API endpoints
 import time
 import logging
 from collections import defaultdict
-from typing import Dict, Tuple
-from fastapi import Request, HTTPException
-from fastapi.responses import JSONResponse
+from typing import Dict, Tuple, AsyncGenerator
+
+from fastapi import Request, HTTPException, status
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class RateLimiter:
             f"{requests_per_minute}/min, burst={burst_size}"
         )
     
-    def check_rate_limit(self, client_ip: str) -> Tuple[bool, Dict]:
+    def check_rate_limit(self, client_ip: str) -> Tuple[bool, Dict[str, int]]:
         """
         Check if request is within rate limit
         
@@ -80,42 +80,6 @@ class RateLimiter:
                 "retry_after": int((1.0 - tokens) / self.refill_rate)
             }
     
-    async def __call__(self, request: Request):
-        """Middleware callable"""
-        # Get client IP
-        client_ip = request.client.host
-        
-        # Skip rate limiting for health checks
-        if request.url.path.endswith("/health") or request.url.path.endswith("/status"):
-            return None
-        
-        # Check rate limit
-        allowed, info = self.check_rate_limit(client_ip)
-        
-        if not allowed:
-            logger.warning(
-                f"Rate limit exceeded for {client_ip}, "
-                f"retry_after={info['retry_after']}s"
-            )
-            
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "error": "Rate limit exceeded",
-                    "retry_after_seconds": info["retry_after"]
-                },
-                headers={
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(info["reset_seconds"]),
-                    "Retry-After": str(info["retry_after"])
-                }
-            )
-        
-        # Add rate limit headers to response
-        request.state.rate_limit_info = info
-        return None
-
-
 class ConcurrencyLimiter:
     """Limit concurrent requests per client"""
     
@@ -157,4 +121,61 @@ def init_rate_limiters(
     concurrency_limiter = ConcurrencyLimiter(max_concurrent)
     
     logger.info("✅ Rate limiters initialized")
+
+
+async def enforce_rate_limits(request: Request) -> None:
+    """FastAPI dependency to enforce per-IP rate limits."""
+    if rate_limiter is None:
+        return
+
+    client_ip = request.client.host if request.client else "anonymous"
+
+    # Skip health/status endpoints
+    if request.url.path.endswith("/health") or request.url.path.endswith("/status"):
+        return
+
+    allowed, info = rate_limiter.check_rate_limit(client_ip)
+
+    if not allowed:
+        logger.warning(
+            "Rate limit exceeded for %s, retry_after=%ss",
+            client_ip,
+            info["retry_after"],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "Rate limit exceeded",
+                "retry_after_seconds": info["retry_after"],
+            },
+            headers={
+                "Retry-After": str(info["retry_after"]),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(info["reset_seconds"]),
+            },
+        )
+
+    request.state.rate_limit_info = info
+
+
+async def enforce_concurrency(request: Request) -> AsyncGenerator[None, None]:
+    """FastAPI dependency to cap concurrent in-flight requests per client."""
+    if concurrency_limiter is None:
+        yield
+        return
+
+    client_ip = request.client.host if request.client else "anonymous"
+
+    allowed = await concurrency_limiter.acquire(client_ip)
+    if not allowed:
+        logger.warning("Concurrency limit exceeded for %s", client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"error": "Too many concurrent requests", "client": client_ip},
+        )
+
+    try:
+        yield
+    finally:
+        await concurrency_limiter.release(client_ip)
 

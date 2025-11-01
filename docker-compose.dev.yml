@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  brain-ai-builder:
+    image: python:3.12-slim
+    container_name: brain-ai-builder
+    working_dir: /workspace
+    command: >-
+      bash -c "set -euo pipefail \
+      && apt-get update \
+      && apt-get install -y build-essential cmake ninja-build libssl-dev pkg-config git \
+      && rm -rf /var/lib/apt/lists/* \
+      && cd /workspace/brain-ai/python \
+      && rm -f /workspace/wheels/brain_ai-*.whl \
+      && pip install --no-cache-dir build scikit-build-core pybind11 cmake ninja \
+      && python -m build --wheel \
+      && cp dist/brain_ai-*.whl /workspace/wheels/"
+    volumes:
+      - ./brain-ai:/workspace/brain-ai
+      - ./brain-ai-rest-service/wheels:/workspace/wheels
+    restart: "no"
+
+  deepseek-ocr:
+    build:
+      context: ./deepseek-ocr-service
+      dockerfile: Dockerfile
+    container_name: deepseek-ocr-service
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  brain-ai-rest:
+    image: python:3.12-slim
+    container_name: brain-ai-rest-service
+    working_dir: /workspace/brain-ai-rest-service
+    command: >-
+      bash -c "set -euo pipefail \
+      && apt-get update \
+      && apt-get install -y curl build-essential \
+      && rm -rf /var/lib/apt/lists/* \
+      && pip install --no-cache-dir -r requirements.txt \
+      && if ls wheels/brain_ai-*.whl >/dev/null 2>&1; then \
+           pip install --no-cache-dir wheels/brain_ai-*.whl; \
+         else \
+           echo 'Missing brain_ai wheel in wheels/. Run brain-ai-builder first.' >&2; \
+           exit 1; \
+         fi \
+      && uvicorn app:app --host 0.0.0.0 --port 5001"
+    volumes:
+      - ./brain-ai-rest-service:/workspace/brain-ai-rest-service
+    environment:
+      BRAIN_AI_API_KEY: ${BRAIN_AI_API_KEY:-dev-secret}
+      OCR_SERVICE_URL: http://deepseek-ocr:8000
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "5001:5001"
+    depends_on:
+      brain-ai-builder:
+        condition: service_completed_successfully
+      deepseek-ocr:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - |
+          curl -sf -H "X-API-Key: ${BRAIN_AI_API_KEY:-dev-secret}" http://localhost:5001/api/v1/health >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+networks:
+  default:
+    name: brain-ai-dev

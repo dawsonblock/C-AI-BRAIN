@@ -79,14 +79,18 @@ info "C++ tests passed"
 
 cd ../..
 
-# Step 5: Check Python bindings
-if [ ! -f brain-ai/build/brain_ai_py*.so ]; then
-    error "Python bindings not found. Build with -DBUILD_PYTHON_BINDINGS=ON"
+# Step 5: Build Python wheel for bindings
+info "Building Brain-AI Python wheel..."
+cd brain-ai/python
+python3 -m pip install --quiet --upgrade build scikit-build-core pybind11 cmake ninja || error "Failed to install wheel build prerequisites"
+python3 -m build || error "Python wheel build failed"
+WHEEL_PATH=$(ls dist/brain_ai-*.whl | head -n 1)
+if [ -z "$WHEEL_PATH" ]; then
+    error "Wheel not produced"
 fi
-
-# Copy bindings to REST service directory
-cp brain-ai/build/brain_ai_py*.so brain-ai-rest-service/
-info "Python bindings copied"
+cp "$WHEEL_PATH" ../../brain-ai-rest-service/wheels/
+info "Python wheel copied to brain-ai-rest-service/wheels/"
+cd ../..
 
 # Step 6: Install Python dependencies
 info "Installing Python dependencies..."
