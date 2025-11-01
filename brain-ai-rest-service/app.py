@@ -107,7 +107,7 @@ try:
     metrics = metrics_collector
 
     hist_samples_config = get_config('monitoring.histogram_max_samples')
-    if hist_samples_config is not None:
+    if hist_samples_config is not None and metrics is not None:
         try:
             # Let metrics validate and coerce; do not pre-cast here
             metrics.set_histogram_max_samples(hist_samples_config)
