@@ -42,6 +42,11 @@ std::vector<float> to_vector(const py::object &obj) {
     for (auto item : py::iter(obj)) {
         result.push_back(py::cast<float>(item));
     }
+    if (!result.empty() && result.size() != kEmbeddingDim) {
+        throw std::invalid_argument("Embedding dimension mismatch: expected "
+                                    + std::to_string(kEmbeddingDim) + ", got "
+                                    + std::to_string(result.size()));
+    }
     return result;
 }
 
