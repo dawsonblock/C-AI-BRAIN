@@ -59,25 +59,24 @@ std::vector<float> to_vector(const py::object &obj) {
         result.reserve(n);
     } catch (const py::error_already_set &) {
         // No __len__; fall back to strict counting with an upper bound
-        result.reserve(kEmbeddingDim);
-    }
-    for (auto item : py::iter(obj)) {
-        float v = py::cast<float>(item);
-        if (std::isnan(v) || std::isinf(v)) {
-            throw std::invalid_argument("Embedding contains NaN/Inf values");
-        }
-        result.push_back(v);
-        if (result.size() > kEmbeddingDim) {
-            throw std::invalid_argument("Embedding dimension mismatch: too many elements");
-        }
-    }
-    if (!result.empty() && result.size() != kEmbeddingDim) {
-        throw std::invalid_argument("Embedding dimension mismatch: expected "
-                                    + std::to_string(kEmbeddingDim) + ", got "
-                                    + std::to_string(result.size()));
-    }
-    return result;
-}
+
+            // Disperse contributions using two indices per char and clamp partial sums
+            for (unsigned char ch : text) {
+                state ^= static_cast<std::uint64_t>(ch);
+                state *= prime;
+                std::size_t idx1 = static_cast<std::size_t>(state % kEmbeddingDim);
+                std::size_t idx2 = static_cast<std::size_t>((state / prime) % kEmbeddingDim);
+                float value = static_cast<float>((state % 2000) / 1000.0 - 1.0f);
+                vec[idx1] = std::clamp(vec[idx1] + value * 0.7f, -5.0f, 5.0f);
+                vec[idx2] = std::clamp(vec[idx2] + value * 0.3f, -5.0f, 5.0f);
+            }
+
+            float norm = 0.0f;
+            for (float val : vec) norm += val * val;
+            norm = std::sqrt(norm);
+            if (norm > 1e-6f) {
+                for (float &val : vec) val /= norm;
+            }
 
 std::vector<float> hashed_embedding(const std::string &text) {
     std::vector<float> vec(kEmbeddingDim, 0.0f);
