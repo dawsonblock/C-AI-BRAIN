@@ -576,7 +576,7 @@ class Index {
 
         memcpy(appr_alg->data_level0_memory_, data_level0_npy.data(), data_level0_npy.nbytes());
 
-        for (size_t i = 0; i < appr_alg->max_elements_; i++) {
+        for (size_t i = 0; i < appr_alg->cur_element_count; i++) {
             size_t linkListSize = appr_alg->element_levels_[i] > 0 ? appr_alg->size_links_per_element_ * appr_alg->element_levels_[i] : 0;
             if (linkListSize == 0) {
                 appr_alg->linkLists_[i] = nullptr;
@@ -587,6 +587,9 @@ class Index {
 
                 memcpy(appr_alg->linkLists_[i], link_list_npy.data() + link_npy_offsets[i], linkListSize);
             }
+        }
+        for (size_t i = appr_alg->cur_element_count; i < appr_alg->max_elements_; i++) {
+            appr_alg->linkLists_[i] = nullptr;
         }
 
         // process deleted elements
