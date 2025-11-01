@@ -640,22 +640,21 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
         char** linkLists_new = (char**)realloc(linkLists_, sizeof(void*) * new_max_elements);
         if (linkLists_new == nullptr) {
-            // Attempt to revert the first realloc, though it might not be possible to get the original size.
-            // A safer approach is to avoid realloc and use malloc/memcpy/free.
-            // For now, we at least free the successfully reallocated memory to prevent a leak on this error path.
             free(data_level0_memory_new);
             throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
         }
-    
+
+        // Assign new buffers
         data_level0_memory_ = data_level0_memory_new;
+        // Zero-initialize the newly added slots to avoid dangling pointers
+        if (new_max_elements > max_elements_) {
+            std::fill(linkLists_new + max_elements_, linkLists_new + new_max_elements, nullptr);
+        }
         linkLists_ = linkLists_new;
 
         visited_list_pool_.reset(new VisitedListPool(1, new_max_elements));
-
         element_levels_.resize(new_max_elements);
-
         std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
-
         max_elements_ = new_max_elements;
     }
 
