@@ -5,6 +5,10 @@
 #include <thread>
 #include <cstring>
 #include <iostream>
+#include <regex>
+#include <algorithm>
+#include <cctype>
+#include <chrono>
 
 // Logger placeholder (replace with full logging system if available)
 namespace Logger {
@@ -25,38 +29,207 @@ namespace Logger {
 
 namespace brain_ai::document {
 
+namespace {
+struct ParsedUrl {
+    std::string scheme;
+    std::string host;
+    int port{ -1 };
+    std::string path;
+};
+
+std::string to_lower(const std::string& input) {
+    std::string output = input;
+    std::transform(output.begin(), output.end(), output.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return output;
+}
+
+ParsedUrl parse_url(const std::string& url) {
+    static const std::regex url_regex(R"((https?)://([^/:]+)(?::(\d+))?(\/.*)?$)", std::regex::icase);
+    std::smatch match;
+    if (!std::regex_match(url, match, url_regex)) {
+        throw std::runtime_error("Invalid OCR service URL: " + url);
+    }
+
+    ParsedUrl parsed;
+    parsed.scheme = to_lower(match[1].str());
+    parsed.host = match[2].str();
+
+    if (match[3].matched) {
+        parsed.port = std::stoi(match[3].str());
+    }
+
+    parsed.path = match[4].matched ? match[4].str() : std::string("/");
+    return parsed;
+}
+
+bool is_valid_host(const std::string& host) {
+    if (host.empty()) {
+        return false;
+    }
+    return std::all_of(host.begin(), host.end(), [](unsigned char c) {
+        return std::isalnum(c) || c == '-' || c == '.';
+    });
+}
+
+bool host_allowed(const std::string& host, const std::vector<std::string>& allow_list) {
+    const std::string host_lower = to_lower(host);
+    for (const auto& pattern : allow_list) {
+        const std::string pattern_lower = to_lower(pattern);
+        if (pattern_lower == host_lower) {
+            return true;
+        }
+
+        const auto wildcard = pattern_lower.find('*');
+        if (wildcard != std::string::npos) {
+            const std::string prefix = pattern_lower.substr(0, wildcard);
+            const std::string suffix = pattern_lower.substr(wildcard + 1);
+            const bool prefix_ok = prefix.empty() || host_lower.rfind(prefix, 0) == 0;
+            const bool suffix_ok = suffix.empty() || (host_lower.size() >= suffix.size() &&
+                host_lower.compare(host_lower.size() - suffix.size(), suffix.size(), suffix) == 0);
+            if (prefix_ok && suffix_ok) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::string sanitize_path(const std::string& raw_path) {
+    if (raw_path.empty() || raw_path == "/") {
+        return std::string();
+    }
+    if (raw_path.find("..") != std::string::npos) {
+        throw std::runtime_error("OCR service path must not contain '..'");
+    }
+    std::string path = raw_path;
+    // Remove trailing slash for consistency
+    while (path.size() > 1 && path.back() == '/') {
+        path.pop_back();
+    }
+    return path;
+}
+
+void apply_timeout(httplib::Client& client, const OCRConfig& config) {
+    const auto safe_duration = [](std::chrono::milliseconds duration, std::chrono::milliseconds fallback) {
+        return duration.count() <= 0 ? fallback : duration;
+    };
+
+    const auto connect_timeout = safe_duration(config.connect_timeout, std::chrono::milliseconds(1000));
+    const auto read_timeout = safe_duration(config.read_timeout, std::chrono::milliseconds(5000));
+    const auto write_timeout = safe_duration(config.write_timeout, std::chrono::milliseconds(5000));
+
+    const auto apply = [](auto setter, std::chrono::milliseconds duration) {
+        auto seconds = static_cast<time_t>(duration.count() / 1000);
+        auto micros = static_cast<time_t>((duration.count() % 1000) * 1000);
+        setter(seconds, micros);
+    };
+
+    apply([&](time_t sec, time_t usec) { client.set_connection_timeout(sec, usec); }, connect_timeout);
+    apply([&](time_t sec, time_t usec) { client.set_read_timeout(sec, usec); }, read_timeout);
+    apply([&](time_t sec, time_t usec) { client.set_write_timeout(sec, usec); }, write_timeout);
+}
+
+} // namespace
+
 // PIMPL implementation details
 struct OCRClient::Impl {
     std::unique_ptr<httplib::Client> http_client;
+    std::string base_path;
+    std::string host;
+    int port{0};
+    std::string scheme;
     
-    explicit Impl(const std::string& base_url) {
-        // Parse URL
-        auto scheme_end = base_url.find("://");
-        if (scheme_end == std::string::npos) {
-            throw std::runtime_error("Invalid URL: missing scheme");
+    explicit Impl(const OCRConfig& config) {
+        ParsedUrl parsed = parse_url(config.service_url);
+        scheme = parsed.scheme;
+        host = parsed.host;
+        port = parsed.port;
+
+        if (!is_valid_host(host)) {
+            throw std::runtime_error("OCR service host contains invalid characters: " + host);
         }
-        
-        std::string scheme = base_url.substr(0, scheme_end);
-        std::string host_port = base_url.substr(scheme_end + 3);
-        
-        // Remove trailing slash
-        if (!host_port.empty() && host_port.back() == '/') {
-            host_port.pop_back();
+
+        if (!host_allowed(host, config.allowed_hosts)) {
+            throw std::runtime_error("OCR service host not allowed: " + host);
         }
-        
-        http_client = std::make_unique<httplib::Client>(base_url);
+
+        if (port < 0) {
+            port = (scheme == "https") ? 443 : 80;
+        }
+
+        if (port <= 0 || port > 65535) {
+            throw std::runtime_error("OCR service port out of range: " + std::to_string(port));
+        }
+
+        base_path = sanitize_path(parsed.path);
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        if (scheme == "https") {
+            auto ssl_client = std::make_unique<httplib::SSLClient>(host.c_str(), port);
+            ssl_client->enable_server_certificate_verification(true);
+            http_client = std::move(ssl_client);
+        } else {
+            http_client = std::make_unique<httplib::Client>(host.c_str(), port);
+        }
+#else
+        if (scheme == "https") {
+            throw std::runtime_error("HTTPS OCR endpoints require OpenSSL support");
+        }
+        http_client = std::make_unique<httplib::Client>(host.c_str(), port);
+#endif
+
         http_client->set_keep_alive(true);
+        http_client->set_follow_location(true);
+        apply_timeout(*http_client, config);
+
+        Logger::info(
+            "OCRClient",
+            "HTTP client bound to " + scheme + "://" + host + ":" + std::to_string(port) +
+                (base_path.empty() ? std::string() : base_path)
+        );
+    }
+
+    std::string resolve_endpoint(const std::string& endpoint) const {
+        std::string sanitized = endpoint;
+        if (sanitized.empty()) {
+            sanitized = "/";
+        }
+        if (sanitized.front() != '/') {
+            sanitized.insert(sanitized.begin(), '/');
+        }
+        if (sanitized.find("..") != std::string::npos) {
+            throw std::runtime_error("Endpoint must not contain '..'");
+        }
+
+        if (base_path.empty()) {
+            return sanitized;
+        }
+        if (sanitized == "/") {
+            return base_path;
+        }
+
+        if (base_path.back() == '/') {
+            return base_path + sanitized.substr(1);
+        }
+        return base_path + sanitized;
     }
 };
 
 OCRClient::OCRClient(const OCRConfig& config)
     : config_(config) {
     try {
-        pimpl_ = std::make_unique<Impl>(config_.service_url);
-        pimpl_->http_client->set_connection_timeout(config_.timeout.count());
-        pimpl_->http_client->set_read_timeout(config_.timeout.count());
-        pimpl_->http_client->set_write_timeout(config_.timeout.count());
-        
+        if (config_.timeout != std::chrono::seconds(30)) {
+            auto legacy_ms = std::chrono::duration_cast<std::chrono::milliseconds>(config_.timeout);
+            if (legacy_ms.count() > 0) {
+                config_.connect_timeout = std::min(config_.connect_timeout, legacy_ms);
+                config_.read_timeout = legacy_ms;
+                config_.write_timeout = legacy_ms;
+            }
+        }
+
+        pimpl_ = std::make_unique<Impl>(config_);
         Logger::info("OCRClient", "Initialized with service URL: " + config_.service_url);
     } catch (const std::exception& e) {
         Logger::error("OCRClient", "Failed to initialize: " + std::string(e.what()));
@@ -218,13 +391,18 @@ nlohmann::json OCRClient::get_service_status() {
 
 void OCRClient::update_config(const OCRConfig& config) {
     config_ = config;
+    if (config_.timeout != std::chrono::seconds(30)) {
+        auto legacy_ms = std::chrono::duration_cast<std::chrono::milliseconds>(config_.timeout);
+        if (legacy_ms.count() > 0) {
+            config_.connect_timeout = std::min(config_.connect_timeout, legacy_ms);
+            config_.read_timeout = legacy_ms;
+            config_.write_timeout = legacy_ms;
+        }
+    }
     
     // Recreate HTTP client if URL changed
     if (pimpl_->http_client) {
-        pimpl_ = std::make_unique<Impl>(config_.service_url);
-        pimpl_->http_client->set_connection_timeout(config_.timeout.count());
-        pimpl_->http_client->set_read_timeout(config_.timeout.count());
-        pimpl_->http_client->set_write_timeout(config_.timeout.count());
+        pimpl_ = std::make_unique<Impl>(config_);
     }
     
     Logger::info("OCRClient", "Configuration updated");
@@ -237,7 +415,8 @@ std::optional<std::string> OCRClient::make_request(const std::string& endpoint,
     
     while (attempt < config_.max_retries) {
         try {
-            auto response = pimpl_->http_client->Post(endpoint.c_str(), body, content_type.c_str());
+            const auto full_endpoint = pimpl_->resolve_endpoint(endpoint);
+            auto response = pimpl_->http_client->Post(full_endpoint.c_str(), body, content_type.c_str());
             
             if (!response) {
                 Logger::warn("OCRClient", "Request failed: no response (attempt " + 

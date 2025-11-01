@@ -40,11 +40,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(json)
 
-# hnswlib for vector search
+# hnswlib for vector search (pinned commit for reproducibility)
+set(HNSWLIB_GIT_TAG 54ba206166f6a4d30b06d938753c75b6b036c6aa CACHE STRING "Pinned hnswlib commit")
 FetchContent_Declare(
     hnswlib
     GIT_REPOSITORY https://github.com/nmslib/hnswlib.git
-    GIT_TAG        v0.8.0
+    GIT_TAG        ${HNSWLIB_GIT_TAG}
+    GIT_SHALLOW    FALSE
 )
 FetchContent_MakeAvailable(hnswlib)
 
@@ -70,11 +72,6 @@ if(BUILD_PYTHON_BINDINGS)
         set(pybind11_FOUND TRUE)  # Mark as found after fetch
     endif()
 endif()
-
-# Include directories
-include_directories(${CMAKE_SOURCE_DIR}/include)
-include_directories(${hnswlib_SOURCE_DIR})
-include_directories(${httplib_SOURCE_DIR})
 
 # Verify required source files exist to prevent opaque build errors
 foreach(_src
@@ -119,12 +116,23 @@ set(BRAIN_AI_SOURCES
 
 # Create library
 add_library(brain_ai_lib STATIC ${BRAIN_AI_SOURCES})
-target_link_libraries(brain_ai_lib PUBLIC 
-    Threads::Threads 
-    nlohmann_json::nlohmann_json
-    OpenSSL::SSL
-    OpenSSL::Crypto
+target_link_libraries(brain_ai_lib
+    PUBLIC
+        Threads::Threads
+        nlohmann_json::nlohmann_json
+        OpenSSL::SSL
+        OpenSSL::Crypto
 )
+target_include_directories(brain_ai_lib
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+        ${hnswlib_SOURCE_DIR}
+        ${httplib_SOURCE_DIR}
+)
+if(TARGET hnswlib)
+    target_link_libraries(brain_ai_lib PRIVATE hnswlib)
+endif()
 
 # Main executable (demo)
 add_executable(brain_ai_demo src/main.cpp)
@@ -144,7 +152,9 @@ if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
     
     # Install Python module
     install(TARGETS brain_ai_py
-            LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/python)
+            LIBRARY DESTINATION .
+            RUNTIME DESTINATION .
+            ARCHIVE DESTINATION .)
 endif()
 
 # gRPC service (optional)

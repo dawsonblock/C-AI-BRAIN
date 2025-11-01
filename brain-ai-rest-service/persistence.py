@@ -6,8 +6,15 @@ Handles saving/loading of vector index and facts store
 import os
 import json
 import logging
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
+
+try:
+    import fcntl  # type: ignore
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    fcntl = None
 
 logger = logging.getLogger(__name__)
 
@@ -21,33 +28,95 @@ class PersistenceManager:
         
         self.vector_index_path = self.data_dir / "vector_index.bin"
         self.metadata_path = self.data_dir / "metadata.json"
+        self.lock_path = self.data_dir / ".brain_ai.lock"
         
         logger.info(f"✅ Persistence manager initialized (dir={self.data_dir})")
     
+    @contextmanager
+    def _lock(self, exclusive: bool = True):
+        """Advisory filesystem lock to guard persistence operations."""
+        if fcntl is None:
+            yield
+            return
+
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.lock_path, "w+") as lock_file:
+            mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+            fcntl.flock(lock_file.fileno(), mode)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def _write_json_atomic(self, path: Path, payload: Dict[str, Any]) -> None:
+        """Write JSON to disk atomically using a temporary file."""
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        os.replace(tmp_path, path)
+        try:
+            dir_fd = os.open(str(path.parent), os.O_DIRECTORY)
+        except (AttributeError, FileNotFoundError, NotADirectoryError, PermissionError):
+            dir_fd = None
+        if dir_fd is not None:
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+
+    def _load_metadata(self) -> Dict[str, Any]:
+        if not self.metadata_path.exists():
+            return {}
+        try:
+            with open(self.metadata_path, "r") as handle:
+                return json.load(handle)
+        except Exception as exc:
+            logger.error(f"Failed to read metadata: {exc}")
+            return {}
+
     def save_vector_index(self, cognitive_handler) -> bool:
         """Save vector index to disk"""
         try:
-            # Save the HNSW index
-            success = cognitive_handler.vector_index().save(str(self.vector_index_path))
-            
-            if success:
-                # Save metadata
+            with self._lock(exclusive=True):
+                tmp_index_path = self.vector_index_path.with_suffix(self.vector_index_path.suffix + ".tmp")
+                success = cognitive_handler.vector_index().save(str(tmp_index_path))
+
+                if not success:
+                    if tmp_index_path.exists():
+                        try:
+                            tmp_index_path.unlink()
+                        except OSError:
+                            pass
+                    return False
+
+                os.replace(tmp_index_path, self.vector_index_path)
+
                 metadata = {
                     "version": "1.0.0",
+                    "schema_version": 1,
+                    "format": "hnsw",
                     "vector_index_size": cognitive_handler.vector_index_size(),
                     "episodic_buffer_size": cognitive_handler.episodic_buffer_size(),
                     "semantic_network_size": cognitive_handler.semantic_network_size(),
-                    "embedding_dim": cognitive_handler.vector_index().dimension() if hasattr(cognitive_handler.vector_index(), 'dimension') else 768
+                    "embedding_dim": cognitive_handler.vector_index().dimension() if hasattr(cognitive_handler.vector_index(), 'dimension') else 768,
+                    "updated_at": datetime.utcnow().isoformat() + "Z",
+                    "data_directory": str(self.data_dir),
+                    "index_file": self.vector_index_path.name,
                 }
-                
-                with open(self.metadata_path, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                
-                logger.info(f"✅ Saved vector index ({metadata['vector_index_size']} docs)")
+
+                self._write_json_atomic(self.metadata_path, metadata)
+
+                logger.info(
+                    "✅ Saved vector index (%d docs, episodic=%d, semantic=%d)",
+                    metadata["vector_index_size"],
+                    metadata["episodic_buffer_size"],
+                    metadata["semantic_network_size"]
+                )
                 return True
-            
-            return False
-            
+
         except Exception as e:
             logger.error(f"Failed to save vector index: {e}")
             return False
@@ -58,21 +127,30 @@ class PersistenceManager:
             if not self.vector_index_path.exists():
                 logger.info("No saved vector index found")
                 return False
-            
-            if not self.metadata_path.exists():
-                logger.warning("No metadata found, attempting load anyway")
+
+            metadata = self._load_metadata()
+            if metadata:
+                if metadata.get("schema_version") != 1:
+                    logger.warning(
+                        "Persistence metadata schema mismatch (expected=1, found=%s)",
+                        metadata.get("schema_version")
+                    )
+                else:
+                    logger.info(
+                        "Loading vector index (version=%s, docs=%s)",
+                        metadata.get("version"),
+                        metadata.get("vector_index_size")
+                    )
             else:
-                with open(self.metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                logger.info(f"Loading vector index (version={metadata.get('version')}, docs={metadata.get('vector_index_size')})")
-            
-            # Load the HNSW index
-            success = cognitive_handler.vector_index().load(str(self.vector_index_path))
-            
+                logger.warning("No metadata found, attempting load anyway")
+
+            with self._lock(exclusive=False):
+                success = cognitive_handler.vector_index().load(str(self.vector_index_path))
+
             if success:
                 logger.info(f"✅ Loaded vector index ({cognitive_handler.vector_index_size()} docs)")
                 return True
-            
+
             return False
             
         except Exception as e:
@@ -106,17 +184,19 @@ class PersistenceManager:
     
     def get_info(self) -> Dict[str, Any]:
         """Get information about saved data"""
-        if not self.metadata_path.exists():
+        metadata = self._load_metadata()
+        if not metadata:
             return {"exists": False}
-        
+
         try:
-            with open(self.metadata_path, 'r') as f:
-                metadata = json.load(f)
-            
             metadata["exists"] = True
             metadata["vector_index_file"] = str(self.vector_index_path)
-            metadata["vector_index_size_mb"] = self.vector_index_path.stat().st_size / (1024 * 1024) if self.vector_index_path.exists() else 0
-            
+            metadata["vector_index_size_mb"] = (
+                self.vector_index_path.stat().st_size / (1024 * 1024)
+                if self.vector_index_path.exists()
+                else 0
+            )
+            metadata["lock_file"] = str(self.lock_path)
             return metadata
         except Exception as e:
             logger.error(f"Failed to get persistence info: {e}")

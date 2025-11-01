@@ -4,9 +4,10 @@ Brain-AI REST Service
 REST API wrapper for Brain-AI C++ library providing document processing and query capabilities
 """
 
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import logging
@@ -17,6 +18,9 @@ import yaml
 import os
 from pathlib import Path
 import threading
+import secrets
+
+from rate_limiter import enforce_concurrency, enforce_rate_limits, init_rate_limiters
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +52,13 @@ SERVICE_INFO = {
     "started_at": datetime.now().isoformat()
 }
 
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+BEARER_SCHEME = HTTPBearer(auto_error=False)
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+MAX_TOKEN_COUNT = 256_000
+DEFAULT_REQUEST_TIMEOUT = 60
+
 # ==================== Middleware Configuration ====================
 
 # CORS
@@ -65,26 +76,13 @@ if cors_enabled:
 
 # Import middleware (after app creation)
 try:
-    from middleware import APIKeyMiddleware, RequestTrackingMiddleware
+    from middleware import RequestTrackingMiddleware
     from metrics import metrics as metrics_collector
     
     # Request tracking
     request_tracker = RequestTrackingMiddleware(app)
     app.add_middleware(RequestTrackingMiddleware)
     logger.info("✅ Request tracking middleware added")
-    
-    # API key authentication
-    api_key_required = CONFIG.get('security', {}).get(
-        'api_key_required', False
-    )
-    api_key_env = CONFIG.get('security', {}).get(
-        'api_key_env', 'BRAIN_AI_API_KEY'
-    )
-    app.add_middleware(
-        APIKeyMiddleware,
-        api_key_required=api_key_required,
-        api_key_env=api_key_env
-    )
     
     # Alias for convenience
     metrics = metrics_collector
@@ -129,18 +127,141 @@ def get_config(key_path: str, default=None):
             return default
     return val
 
+
+API_KEY_ENV = get_config('security.api_key_env', 'BRAIN_AI_API_KEY')
+REQUEST_TIMEOUT_SECONDS = int(get_config('security.request_timeout_seconds', DEFAULT_REQUEST_TIMEOUT))
+RATE_LIMIT_RPS = int(get_config('security.rate_limit_rps', 10))
+RATE_LIMIT_BURST = int(get_config('security.rate_limit_burst', 100))
+MAX_CONCURRENT_REQUESTS = int(get_config('security.max_concurrent_requests', 8))
+
+
+async def require_api_key(
+    request: Request,
+    header_key: Optional[str] = Security(API_KEY_HEADER),
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(BEARER_SCHEME),
+) -> None:
+    """Ensure every request presents the configured API key."""
+    expected = os.getenv(API_KEY_ENV)
+    if not expected:
+        logger.error("❌ API key environment variable %s not set", API_KEY_ENV)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service misconfigured: API key missing",
+        )
+
+    provided = header_key or (bearer_token.credentials if bearer_token else None)
+    if not provided:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing API key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+
+    if not secrets.compare_digest(provided, expected):
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning("Invalid API key attempt from %s", client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid API key",
+        )
+
+    request.state.api_key_validated = True
+
+
+async def enforce_payload_limits(request: Request) -> None:
+    """Bound request body size and approximate token count."""
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+
+    body = await request.body()
+    request._body = body  # allow downstream handlers to reuse the buffered body
+    async def _receive():  # pragma: no cover - Starlette internals
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request._receive = _receive  # type: ignore[attr-defined]
+
+    body_size = len(body)
+    if body_size > MAX_UPLOAD_BYTES:
+        logger.warning("Payload rejected (%d bytes)", body_size)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Payload exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit",
+        )
+
+    if not body:
+        return
+
+    try:
+        decoded = body.decode("utf-8", errors="ignore")
+    except Exception:
+        return  # Binary payloads already constrained by size check
+
+    token_count = len(decoded.split())
+    if token_count > MAX_TOKEN_COUNT:
+        logger.warning("Payload token count %d exceeds limit", token_count)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Payload exceeds 256k token limit",
+        )
+
+
+async def run_with_timeout(coro):
+    """Apply a hard timeout to backend operations."""
+    try:
+        return await asyncio.wait_for(coro, timeout=REQUEST_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as exc:
+        logger.error("Operation exceeded %ss timeout", REQUEST_TIMEOUT_SECONDS)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Operation exceeded {REQUEST_TIMEOUT_SECONDS}s timeout",
+        ) from exc
+
+
+init_rate_limiters(
+    requests_per_minute=RATE_LIMIT_RPS * 60,
+    burst_size=RATE_LIMIT_BURST,
+    max_concurrent=MAX_CONCURRENT_REQUESTS,
+)
+
+
+@app.middleware("http")
+async def attach_rate_limit_headers(request: Request, call_next):
+    response = await call_next(request)
+    info = getattr(request.state, "rate_limit_info", None)
+    if info:
+        response.headers.setdefault("X-RateLimit-Remaining", str(info.get("remaining", 0)))
+        response.headers.setdefault("X-RateLimit-Reset", str(info.get("reset_seconds", 0)))
+    return response
+
+
+BrainAICognitiveHandler = None
+BrainAIQueryConfig = None
+
+try:
+    from brain_ai import CognitiveHandler as BrainAICognitiveHandler, QueryConfig as BrainAIQueryConfig  # type: ignore
+    logger.info("✅ brain_ai wheel detected")
+except ImportError:
+    try:
+        import brain_ai_py as _brain_ai_py  # type: ignore
+
+        BrainAICognitiveHandler = _brain_ai_py.CognitiveHandler
+        BrainAIQueryConfig = _brain_ai_py.QueryConfig
+        logger.info("✅ brain_ai_py extension detected")
+    except ImportError:
+        logger.error("❌ Brain-AI bindings not found; REST endpoints will use mock backend")
+
+
 # Try to import C++ backend
 USE_CPP_BACKEND = False
 cognitive_handler = None
 
 cpp_enabled = get_config('cpp_backend.enabled', True)
-if cpp_enabled:
+if cpp_enabled and BrainAICognitiveHandler:
     try:
-        import brain_ai_py
         embedding_dim = int(get_config('cpp_backend.embedding_dim', 768))
         episodic_capacity = int(get_config('cpp_backend.episodic_capacity', 128))
         
-        cognitive_handler = brain_ai_py.CognitiveHandler(
+        cognitive_handler = BrainAICognitiveHandler(
             episodic_capacity=episodic_capacity,
             embedding_dim=embedding_dim
         )
@@ -149,6 +270,8 @@ if cpp_enabled:
     except Exception as e:
         logger.warning(f"⚠️  C++ backend unavailable, using mock: {e}")
         USE_CPP_BACKEND = False
+elif cpp_enabled:
+    logger.warning("⚠️  C++ backend enabled in config but bindings are missing")
 
 # Initialize RAG++ components
 from reranker import ReRanker
@@ -556,6 +679,16 @@ class MockBrainAI:
 # Initialize mock backend
 brain_ai = MockBrainAI()
 
+api_router = APIRouter(
+    prefix="/api/v1",
+    dependencies=[
+        Depends(require_api_key),
+        Depends(enforce_rate_limits),
+        Depends(enforce_concurrency),
+        Depends(enforce_payload_limits),
+    ],
+)
+
 # ==================== API Endpoints ====================
 
 @app.get("/")
@@ -573,7 +706,7 @@ async def root():
         }
     }
 
-@app.get("/api/v1/health", response_model=HealthResponse)
+@api_router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
     return HealthResponse(
@@ -616,7 +749,7 @@ async def get_metrics():
     
     return PlainTextResponse(content=metrics.export_prometheus(), media_type="text/plain")
 
-@app.get("/api/v1/stats", response_model=StatsResponse)
+@api_router.get("/stats", response_model=StatsResponse)
 async def get_statistics():
     """Get service statistics"""
     uptime = (datetime.now() - datetime.fromisoformat(SERVICE_INFO["started_at"])).total_seconds()
@@ -644,14 +777,14 @@ async def get_statistics():
         avg_document_time_ms=avg_document_time
     )
 
-@app.post("/api/v1/documents/process", response_model=DocumentProcessResponse)
+@api_router.post("/documents/process", response_model=DocumentProcessResponse)
 async def process_document(request: DocumentProcessRequest):
     """Process a single document"""
     logger.info(f"Processing document: {request.doc_id}")
     
     stats["total_documents"] += 1
     
-    result = await brain_ai.process_document(request)
+    result = await run_with_timeout(brain_ai.process_document(request))
     
     if result.success:
         stats["successful_documents"] += 1
@@ -662,7 +795,7 @@ async def process_document(request: DocumentProcessRequest):
     
     return result
 
-@app.post("/api/v1/documents/batch", response_model=BatchDocumentResponse)
+@api_router.post("/documents/batch", response_model=BatchDocumentResponse)
 async def process_documents_batch(request: BatchDocumentRequest):
     """Process multiple documents in batch"""
     logger.info(f"Processing batch of {len(request.documents)} documents")
@@ -675,7 +808,7 @@ async def process_documents_batch(request: BatchDocumentRequest):
             doc_req.ocr_config = request.ocr_config
         tasks.append(brain_ai.process_document(doc_req))
     
-    results = await asyncio.gather(*tasks)
+    results = await run_with_timeout(asyncio.gather(*tasks))
     
     total_time_ms = int((time.time() - start_time) * 1000)
     
@@ -690,39 +823,39 @@ async def process_documents_batch(request: BatchDocumentRequest):
         total_time_ms=total_time_ms
     )
 
-@app.post("/api/v1/query", response_model=QueryResponse)
+@api_router.post("/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     """Process a cognitive query"""
     logger.info(f"Processing query: {request.query}")
     
     stats["total_queries"] += 1
     
-    result = await brain_ai.process_query(request)
+    result = await run_with_timeout(brain_ai.process_query(request))
     
     stats["successful_queries"] += 1
     stats["total_query_time_ms"] += result.processing_time_ms
     
     return result
 
-@app.post("/api/v1/search", response_model=SearchResponse)
+@api_router.post("/search", response_model=SearchResponse)
 async def search_similar(request: SearchRequest):
     """Search for similar documents"""
     logger.info(f"Searching with top_k={request.top_k}")
     
-    result = await brain_ai.search_similar(request)
+    result = await run_with_timeout(brain_ai.search_similar(request))
     
     return result
 
-@app.post("/api/v1/index", response_model=IndexResponse)
+@api_router.post("/index", response_model=IndexResponse)
 async def index_document(request: IndexRequest):
     """Index a document in the vector store (requires embedding)"""
     logger.info(f"Indexing document: {request.doc_id}")
     
-    result = await brain_ai.index_document(request)
+    result = await run_with_timeout(brain_ai.index_document(request))
     
     return result
 
-@app.post("/api/v1/index_with_text")
+@api_router.post("/index_with_text")
 async def index_with_text(request: dict):
     """Index a document by auto-generating embeddings from text"""
     doc_id = request.get("doc_id")
@@ -769,38 +902,38 @@ async def index_with_text(request: dict):
         logger.error(f"Indexing with text failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/v1/episodes", response_model=EpisodeResponse)
+@api_router.post("/episodes", response_model=EpisodeResponse)
 async def add_episode(request: EpisodeRequest):
     """Add an episode to episodic memory"""
     logger.info(f"Adding episode for query: {request.query}")
     
-    result = await brain_ai.add_episode(request)
+    result = await run_with_timeout(brain_ai.add_episode(request))
     
     return result
 
-@app.get("/api/v1/episodes/recent", response_model=EpisodesResponse)
+@api_router.get("/episodes/recent", response_model=EpisodesResponse)
 async def get_recent_episodes(limit: int = 10):
     """Get recent episodes"""
     logger.info(f"Retrieving {limit} recent episodes")
     
-    result = await brain_ai.get_recent_episodes(limit)
+    result = await run_with_timeout(brain_ai.get_recent_episodes(limit))
     
     return result
 
-@app.post("/api/v1/episodes/search", response_model=EpisodesResponse)
+@api_router.post("/episodes/search", response_model=EpisodesResponse)
 async def search_episodes(request: SearchRequest):
     """Search episodes by similarity"""
     logger.info(f"Searching episodes with top_k={request.top_k}")
     
     # For now, return recent episodes
     # In production, this would do actual vector search
-    result = await brain_ai.get_recent_episodes(request.top_k)
+    result = await run_with_timeout(brain_ai.get_recent_episodes(request.top_k))
     
     return result
 
 # ==================== New RAG++ Endpoints ====================
 
-@app.post("/api/v1/answer")
+@api_router.post("/answer")
 async def answer_question(request: dict):
     """
     Answer question with optional multi-agent orchestration
@@ -836,7 +969,14 @@ async def answer_question(request: dict):
         if not embedding_model:
             raise HTTPException(status_code=503, detail="Embedding model not available")
         
-        query_embedding = embedding_model.encode(question, convert_to_numpy=True).tolist()
+        query_embedding_array = await run_with_timeout(
+            asyncio.to_thread(
+                embedding_model.encode,
+                question,
+                convert_to_numpy=True
+            )
+        )
+        query_embedding = query_embedding_array.tolist()
         
         # Retrieve from vector store
         context_chunks = []
@@ -844,17 +984,21 @@ async def answer_question(request: dict):
         
         if cognitive_handler and USE_CPP_BACKEND:
             # Build QueryConfig
-            import brain_ai_py
-            config = brain_ai_py.QueryConfig()
+            if not BrainAIQueryConfig:
+                raise HTTPException(status_code=503, detail="C++ bindings missing QueryConfig")
+            config = BrainAIQueryConfig()
             config.use_episodic = False
             config.use_semantic = False
             config.top_k_results = int(get_config('retrieval.vector_search.top_k', 50))
             
             # Query C++ backend
-            response = cognitive_handler.process_query(
-                query=question,
-                query_embedding=query_embedding,
-                config=config
+            response = await run_with_timeout(
+                asyncio.to_thread(
+                    cognitive_handler.process_query,
+                    question,
+                    query_embedding,
+                    config
+                )
             )
             
             # Extract context chunks from response
@@ -874,7 +1018,14 @@ async def answer_question(request: dict):
                 rerank_top_k = get_config('retrieval.reranker.rerank_top_k', 10)
                 
                 # Re-rank the chunks
-                reranked_results = reranker.rerank(question, context_chunks, top_k=rerank_top_k)
+                reranked_results = await run_with_timeout(
+                    asyncio.to_thread(
+                        reranker.rerank,
+                        question,
+                        context_chunks,
+                        rerank_top_k
+                    )
+                )
                 
                 # Reorder chunks by score
                 reranked_chunks = [context_chunks[idx] for idx, score in reranked_results]
@@ -888,14 +1039,23 @@ async def answer_question(request: dict):
         # Generate answer
         if use_multi_agent and multi_agent:
             logger.info("🤖 Using multi-agent orchestration")
-            result = await multi_agent.solve(question, context)
+            result = await run_with_timeout(
+                multi_agent.solve(
+                    question,
+                    context,
+                    force_multi_agent=force_reasoning
+                )
+            )
             result["mode"] = "multi_agent"
         elif deepseek_client:
             logger.info("💬 Using single-agent with router")
-            result = deepseek_client.generate_with_citations(
-                question=question,
-                context=context,
-                evidence_threshold=evidence_threshold
+            result = await run_with_timeout(
+                asyncio.to_thread(
+                    deepseek_client.generate_with_citations,
+                    question,
+                    context,
+                    evidence_threshold
+                )
             )
             result["mode"] = "single_agent"
         else:
@@ -910,12 +1070,15 @@ async def answer_question(request: dict):
         
         # Store in facts if high confidence
         if result.get("confidence", 0) >= facts_store.confidence_threshold:
-            facts_store.add_fact(
-                question=question,
-                answer=result.get("answer", ""),
-                citations=result.get("citations", []),
-                confidence=result["confidence"],
-                source=result["mode"]
+            await run_with_timeout(
+                asyncio.to_thread(
+                    facts_store.add_fact,
+                    question,
+                    result.get("answer", ""),
+                    result.get("citations", []),
+                    result["confidence"],
+                    result["mode"]
+                )
             )
         
         result["processing_time_ms"] = int((time.time() - start_time) * 1000)
@@ -926,7 +1089,7 @@ async def answer_question(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/v1/chunk")
+@api_router.post("/chunk")
 async def chunk_document(request: dict):
     """
     Chunk document with smart sentence-aware chunking
@@ -946,10 +1109,13 @@ async def chunk_document(request: dict):
         raise HTTPException(status_code=400, detail="text required")
     
     try:
-        chunks = chunker.chunk_document(
-            text=text,
-            doc_id=doc_id,
-            metadata=request.get("metadata")
+        chunks = await run_with_timeout(
+            asyncio.to_thread(
+                chunker.chunk_document,
+                text,
+                doc_id,
+                request.get("metadata")
+            )
         )
         
         return {
@@ -963,7 +1129,7 @@ async def chunk_document(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/facts/stats")
+@api_router.get("/facts/stats")
 async def get_facts_stats():
     """Get facts store statistics"""
     try:
@@ -974,7 +1140,7 @@ async def get_facts_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/system/status")
+@api_router.get("/system/status")
 async def get_system_status():
     """Get comprehensive system status"""
     status = {
@@ -1001,14 +1167,20 @@ async def get_system_status():
     
     return status
 
-@app.post("/api/v1/persistence/save")
+@api_router.post("/persistence/save")
 async def save_persistence():
     """Manually trigger persistence save"""
     if not cognitive_handler:
         raise HTTPException(status_code=503, detail="C++ backend not available")
     
     try:
-        results = persistence_manager.save_all(cognitive_handler, facts_store)
+        results = await run_with_timeout(
+            asyncio.to_thread(
+                persistence_manager.save_all,
+                cognitive_handler,
+                facts_store
+            )
+        )
         return {
             "success": True,
             "results": results,
@@ -1018,14 +1190,19 @@ async def save_persistence():
         logger.error(f"Save failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/v1/persistence/load")
+@api_router.post("/persistence/load")
 async def load_persistence():
     """Manually trigger persistence load"""
     if not cognitive_handler:
         raise HTTPException(status_code=503, detail="C++ backend not available")
     
     try:
-        results = persistence_manager.load_all(cognitive_handler)
+        results = await run_with_timeout(
+            asyncio.to_thread(
+                persistence_manager.load_all,
+                cognitive_handler
+            )
+        )
         return {
             "success": True,
             "results": results,
@@ -1034,6 +1211,9 @@ async def load_persistence():
     except Exception as e:
         logger.error(f"Load failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+app.include_router(api_router)
 
 
 if __name__ == "__main__":

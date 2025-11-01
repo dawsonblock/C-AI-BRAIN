@@ -1,0 +1,43 @@
+[build-system]
+requires = [
+  "scikit-build-core>=0.5.1",
+  "pybind11>=2.11.1",
+  "cmake>=3.22",
+  "ninja"
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "brain-ai"
+version = "0.4.3"
+description = "Brain-AI C++ core with pybind11 bindings"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Brain-AI Team"}]
+keywords = ["rag", "vector-search", "cognitive"]
+classifiers = [
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux"
+]
+
+[project.urls]
+homepage = "https://example.com/brain-ai"
+documentation = "https://example.com/brain-ai/docs"
+repository = "https://example.com/brain-ai/repo"
+
+[tool.scikit-build]
+cmake.minimum-version = "3.22"
+cmake.build-type = "Release"
+cmake.verbose = true
+wheel.packages = ["brain_ai"]
+cmake.args = [
+  "-DBUILD_PYTHON_BINDINGS=ON",
+  "-DBUILD_TESTS=OFF",
+  "-DBUILD_GRPC_SERVICE=OFF"
+]
+cmake.source-dir = ".."
