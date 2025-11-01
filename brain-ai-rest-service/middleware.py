@@ -104,10 +104,13 @@ class RequestTrackingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             status_code = response.status_code
-        except Exception as exc:
-            error_happened = True
-            status_code = getattr(exc, "status_code", 500)
-            logger.error("Request failed: %s", exc)
+
+        try:
+            response.headers["X-Request-ID"] = str(request_id)
+            response.headers["X-Processing-Time-Ms"] = str(int(latency * 1000))
+        except Exception as header_exc:
+            logger.warning("Failed to set tracking headers: %s", header_exc)
+
             raise
         finally:
             latency = time.time() - start_time
