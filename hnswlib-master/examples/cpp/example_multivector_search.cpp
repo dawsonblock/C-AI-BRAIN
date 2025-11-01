@@ -54,17 +54,17 @@ int main() {
     // Query random vectors
     size_t query_size = dim * sizeof(float);
     for (int i = 0; i < num_queries; i++) {
-        char* query_data = new char[query_size];
+        std::unique_ptr<char[]> query_data(new char[query_size]);
         for (int j = 0; j < dim; j++) {
             size_t offset = j * sizeof(float);
-            char* vec_data = query_data + offset;
+            char* vec_data = query_data.get() + offset;
             float value = distrib_real(rng);
             *(float*)vec_data = value;
         }
         std::cout << "Query #" << i << "\n";
         hnswlib::MultiVectorSearchStopCondition<docidtype, dist_t> stop_condition(space, num_docs, ef_collection);
         std::vector<std::pair<float, hnswlib::labeltype>> result = 
-            alg_hnsw->searchStopConditionClosest(query_data, stop_condition);
+            alg_hnsw->searchStopConditionClosest(query_data.get(), stop_condition);
         size_t num_vectors = result.size();
 
         std::unordered_map<docidtype, size_t> doc_counter;
@@ -74,7 +74,6 @@ int main() {
             doc_counter[doc_id] += 1;
         }
         std::cout << "Found " << doc_counter.size() << " documents, " << num_vectors << " vectors\n";
-        delete[] query_data;
     }
 
     delete[] data;
