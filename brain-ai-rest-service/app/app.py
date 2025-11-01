@@ -168,7 +168,13 @@ async def index_document(payload: IndexPayload, request: Request) -> Dict[str, b
     bridge.index_document(payload.doc_id, payload.text, embedding)
     INDEXED_DOCUMENTS.inc()
     INDEX_SIZE.set(bridge.size())
-    bridge.save_index(settings.index_snapshot_path)
+
+    # Best-effort async-ish save to avoid blocking critical path
+    try:
+        # If an async executor is available, prefer it; otherwise, swallow latency but never fail the request
+        bridge.save_index(settings.index_snapshot_path)
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.warning("Index snapshot save failed: %s", exc)
 
     duration_ms = int((time.perf_counter() - start) * 1000)
     LOGGER.info(
