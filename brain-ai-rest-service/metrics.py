@@ -9,6 +9,7 @@ Tracked series (by convention):
   tracking full counts/sums).
 - Various gauges populated by the C++ bindings, facts store, and other subsystems.
 """
+import os
 import time
 import logging
 from typing import Dict, Optional
@@ -18,16 +19,44 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def _resolve_histogram_max_samples() -> int:
+    env_value = os.getenv("BRAIN_AI_METRICS_HIST_MAX_SAMPLES")
+    if env_value is None:
+        return 1024
+
+    try:
+        parsed = int(env_value)
+        if parsed <= 0:
+            raise ValueError("histogram max samples must be positive")
+        return min(parsed, 100_000)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning(
+            "Invalid BRAIN_AI_METRICS_HIST_MAX_SAMPLES=%s (%s); defaulting to 1024",
+            env_value,
+            exc,
+        )
+        return 1024
+
+
 class MetricsCollector:
     """Simple metrics collector for Prometheus-style metrics"""
     
-    def __init__(self):
+    def __init__(self, max_hist_samples: Optional[int] = None):
+        if max_hist_samples is None:
+            max_hist_samples = _resolve_histogram_max_samples()
+        elif max_hist_samples <= 0:
+            logger.warning(
+                "Received non-positive max_hist_samples=%s; defaulting to 1024",
+                max_hist_samples,
+            )
+            max_hist_samples = 1024
+
         self.counters = defaultdict(int)
         self.gauges = defaultdict(float)
         self.histograms: Dict[str, deque] = {}
         self.histogram_stats = defaultdict(lambda: {"count": 0, "sum": 0.0})
         self.start_time = time.time()
-        self._histogram_max_samples = 1024
+        self._histogram_max_samples = max_hist_samples
     
     def inc_counter(self, name: str, value: int = 1, labels: Optional[Dict] = None):
         """Increment a counter metric"""

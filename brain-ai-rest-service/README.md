@@ -260,6 +260,9 @@ Exports include:
 - `brain_ai_facts_count` – total cached high-confidence facts
 - Gauges reflecting vector index, episodic buffer, and semantic graph sizes when the C++ backend is active
 
+Tuning:
+- `BRAIN_AI_METRICS_HIST_MAX_SAMPLES` controls the rolling window size for latency histograms (default 1024, capped at 100k, non-positive values ignored).
+
 
 **GET /api/v1/stats**
 Service statistics.
