@@ -111,8 +111,10 @@ jobs:
       # Deploy the Docker image to the GKE cluster
       - name: 'Deploy to GKE'
         run: |-
-          # replacing the image name in the k8s template
-          ./kustomize edit set image LOCATION-docker.pkg.dev/PROJECT_ID/REPOSITORY/IMAGE:TAG=$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:$GITHUB_SHA
+          set -euo pipefail
+          IMAGE_PATH="${GAR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${GITHUB_SHA}"
+          # Update image by alias used in kustomization (e.g., app-image). Ensure your kustomization.yaml defines this alias.
+          ./kustomize edit set image app-image="${IMAGE_PATH}"
           ./kustomize build . | kubectl apply -f -
-          kubectl rollout status deployment/$DEPLOYMENT_NAME
+          kubectl rollout status deployment/"${DEPLOYMENT_NAME}" --timeout=5m
           kubectl get services -o wide
