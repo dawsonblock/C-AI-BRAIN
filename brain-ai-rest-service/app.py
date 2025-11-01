@@ -734,9 +734,7 @@ async def get_metrics(request: Request):
         metrics.set_gauge("brain_ai_facts_count", facts_stats.get("fact_count", 0))
     
     # Request stats
-    tracker = None
-    if 'get_request_tracker' in globals():
-        tracker = get_request_tracker()
+    tracker = get_request_tracker()
     if tracker is None:
         tracker = getattr(request.app.state, "request_tracker", None)
 
