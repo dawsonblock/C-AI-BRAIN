@@ -57,10 +57,12 @@ class PersistenceManager:
             os.fsync(handle.fileno())
 
         os.replace(tmp_path, path)
-        try:
-            dir_fd = os.open(str(path.parent), os.O_DIRECTORY)
-        except (AttributeError, FileNotFoundError, NotADirectoryError, PermissionError):
-            dir_fd = None
+        dir_fd = None
+        if hasattr(os, 'O_DIRECTORY'):
+            try:
+                dir_fd = os.open(str(path.parent), os.O_DIRECTORY)
+            except (FileNotFoundError, NotADirectoryError, PermissionError):
+                dir_fd = None
         if dir_fd is not None:
             try:
                 os.fsync(dir_fd)
