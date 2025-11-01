@@ -962,41 +962,46 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
     void setListCount(linklistsizeint * ptr, unsigned short int size) const {
         *((unsigned short int*)(ptr))=*((unsigned short int *)&size);
+
+    std::unique_lock<std::mutex> lock_label(getLabelOpMutex(label));
+    if (!replace_deleted) {
+        addPoint(data_point, label, -1);
+        return;
     }
 
-
-    /*
-    * Adds point. Updates the point if it is already in the index.
-    * If replacement of deleted elements is enabled: replaces previously deleted point if any, updating it with new point
-    */
-    void addPoint(const void *data_point, labeltype label, bool replace_deleted = false) {
-        if ((allow_replace_deleted_ == false) && (replace_deleted == true)) {
-            throw std::runtime_error("Replacement of deleted elements is disabled in constructor");
+    tableint internal_id_replaced;
+    {
+        std::unique_lock<std::mutex> lock_deleted_elements(deleted_elements_lock);
+        if (deleted_elements.empty()) {
+            // No vacancy; fall back to normal add
+            goto NORMAL_ADD;
         }
+        internal_id_replaced = *deleted_elements.begin();
+        deleted_elements.erase(internal_id_replaced);
+    }
 
-        // lock all operations with element by label
-        std::unique_lock <std::mutex> lock_label(getLabelOpMutex(label));
-        if (!replace_deleted) {
-            addPoint(data_point, label, -1);
-            return;
-        }
-        // check if there is vacant place
-        tableint internal_id_replaced;
-        std::unique_lock <std::mutex> lock_deleted_elements(deleted_elements_lock);
-        bool is_vacant_place = !deleted_elements.empty();
-        if (is_vacant_place) {
-            internal_id_replaced = *deleted_elements.begin();
-            deleted_elements.erase(internal_id_replaced);
-        }
-        lock_deleted_elements.unlock();
+    // Restore data first, while element is still marked deleted (not visible)
+    memcpy(getDataByInternalId(internal_id_replaced), data_point, data_size_);
 
-        // if there is no vacant place then add or update point
-        // else add point to vacant place
-        if (!is_vacant_place) {
-            addPoint(data_point, label, -1);
-        } else {
-            // we assume that there are no concurrent operations on deleted element
-            labeltype label_replaced = getExternalLabel(internal_id_replaced);
+    // Now make the element visible again
+    unmarkDeletedInternal(internal_id_replaced);
+
+    // Update label mapping atomically
+    {
+        std::unique_lock<std::mutex> lock_table(label_lookup_lock);
+        labeltype label_replaced = getExternalLabel(internal_id_replaced);
+        setExternalLabel(internal_id_replaced, label);
+        label_lookup_.erase(label_replaced);
+        label_lookup_[label] = internal_id_replaced;
+    }
+
+    // Refresh neighborhood due to changed vector
+    updatePoint(getDataByInternalId(internal_id_replaced), internal_id_replaced, 1.0f);
+    return;
+
+NORMAL_ADD:
+    addPoint(data_point, label, -1);
+}
             setExternalLabel(internal_id_replaced, label);
 
             std::unique_lock <std::mutex> lock_table(label_lookup_lock);
