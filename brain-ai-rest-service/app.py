@@ -786,8 +786,8 @@ async def configure_histogram_window(request: HistogramConfigRequest):
 
     return HistogramConfigResponse(histogram_max_samples=metrics.histogram_max_samples)
 
-
 @api_router.get("/monitoring/histogram_window", response_model=HistogramConfigResponse, dependencies=[Depends(require_api_key)])
+async def get_histogram_window():
 async def get_histogram_window():
     """Report current histogram sample window size."""
     if metrics is None:
