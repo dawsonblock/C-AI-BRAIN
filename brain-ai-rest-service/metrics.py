@@ -5,13 +5,14 @@ Tracked series (by convention):
 - Counter ``brain_ai_requests_total`` labelled by ``method`` and ``result`` capturing
   high-level request throughput.
 - Histogram ``brain_ai_request_latency_seconds`` (same labels) storing raw latency
-  samples for percentile export.
+  samples for percentile export (keeps up to 1,024 recent samples per label while
+  tracking full counts/sums).
 - Various gauges populated by the C++ bindings, facts store, and other subsystems.
 """
 import time
 import logging
 from typing import Dict, Optional
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -23,8 +24,10 @@ class MetricsCollector:
     def __init__(self):
         self.counters = defaultdict(int)
         self.gauges = defaultdict(float)
-        self.histograms = defaultdict(list)
+        self.histograms: Dict[str, deque] = {}
+        self.histogram_stats = defaultdict(lambda: {"count": 0, "sum": 0.0})
         self.start_time = time.time()
+        self._histogram_max_samples = 1024
     
     def inc_counter(self, name: str, value: int = 1, labels: Optional[Dict] = None):
         """Increment a counter metric"""
@@ -39,7 +42,14 @@ class MetricsCollector:
     def observe_histogram(self, name: str, value: float, labels: Optional[Dict] = None):
         """Observe a histogram metric"""
         key = self._make_key(name, labels)
-        self.histograms[key].append(value)
+        sample_value = float(value)
+        if key not in self.histograms:
+            self.histograms[key] = deque(maxlen=self._histogram_max_samples)
+        self.histograms[key].append(sample_value)
+
+        stats = self.histogram_stats[key]
+        stats["count"] += 1
+        stats["sum"] += sample_value
     
     def _make_key(self, name: str, labels: Optional[Dict]) -> str:
         """Create metric key with labels"""
@@ -98,28 +108,28 @@ class MetricsCollector:
         # Histograms (simplified - just p50, p95, p99)
         if self.histograms:
             lines.append("# Histograms")
-            for key, values in sorted(self.histograms.items()):
+            for key, samples in sorted(self.histograms.items()):
                 name, labels = self._parse_key(key)
-                if not values:
+                stats = self.histogram_stats[key]
+                if not samples:
                     continue
-                
-                sorted_values = sorted(values)
-                count = len(sorted_values)
-                total = sum(sorted_values)
-                
+
+                sorted_values = sorted(samples)
+                sample_count = len(sorted_values)
+
                 lines.append(f"# TYPE {name} histogram")
-                lines.append(f"{key}_count {count}")
-                lines.append(f"{key}_sum {total:.4f}")
-                
+                lines.append(f"{key}_count {stats['count']}")
+                lines.append(f"{key}_sum {stats['sum']:.4f}")
+
                 # Percentiles
-                if count > 0:
-                    p50_idx = int(count * 0.50)
-                    p95_idx = int(count * 0.95)
-                    p99_idx = int(count * 0.99)
-                    
-                    lines.append(f"{key}_p50 {sorted_values[min(p50_idx, count-1)]:.4f}")
-                    lines.append(f"{key}_p95 {sorted_values[min(p95_idx, count-1)]:.4f}")
-                    lines.append(f"{key}_p99 {sorted_values[min(p99_idx, count-1)]:.4f}")
+                if sample_count > 0:
+                    p50_idx = int(sample_count * 0.50)
+                    p95_idx = int(sample_count * 0.95)
+                    p99_idx = int(sample_count * 0.99)
+
+                    lines.append(f"{key}_p50 {sorted_values[min(p50_idx, sample_count-1)]:.4f}")
+                    lines.append(f"{key}_p95 {sorted_values[min(p95_idx, sample_count-1)]:.4f}")
+                    lines.append(f"{key}_p99 {sorted_values[min(p99_idx, sample_count-1)]:.4f}")
             lines.append("")
         
         return "\n".join(lines)
@@ -133,17 +143,29 @@ class MetricsCollector:
             "histograms": {}
         }
         
-        for key, values in self.histograms.items():
-            if not values:
+        for key, samples in self.histograms.items():
+            if not samples:
                 continue
-            sorted_values = sorted(values)
-            count = len(sorted_values)
+            stats = self.histogram_stats[key]
+            sorted_values = sorted(samples)
+            sample_count = len(sorted_values)
+            if sample_count > 0:
+                p50_idx = min(int(sample_count * 0.50), sample_count - 1)
+                p95_idx = min(int(sample_count * 0.95), sample_count - 1)
+                p99_idx = min(int(sample_count * 0.99), sample_count - 1)
+                p50 = sorted_values[p50_idx]
+                p95 = sorted_values[p95_idx]
+                p99 = sorted_values[p99_idx]
+            else:
+                p50 = p95 = p99 = 0
+
             summary["histograms"][key] = {
-                "count": count,
-                "sum": sum(sorted_values),
-                "p50": sorted_values[int(count * 0.50)] if count > 0 else 0,
-                "p95": sorted_values[int(count * 0.95)] if count > 0 else 0,
-                "p99": sorted_values[int(count * 0.99)] if count > 0 else 0,
+                "sample_count": sample_count,
+                "total_count": stats["count"],
+                "sum": stats["sum"],
+                "p50": p50,
+                "p95": p95,
+                "p99": p99,
             }
         
         return summary

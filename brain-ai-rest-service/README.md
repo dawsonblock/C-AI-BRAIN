@@ -256,7 +256,7 @@ Prometheus-formatted scrape point (disabled by default—set `monitoring.prometh
 
 Exports include:
 - `brain_ai_requests_total{method="POST",result="success"}` – per-method request counter
-- `brain_ai_request_latency_seconds` – raw latency samples with p50 / p95 / p99 summaries
+- `brain_ai_request_latency_seconds` – raw latency samples with p50 / p95 / p99 summaries (keeps the last 1,024 samples per method/result label while tracking full totals)
 - `brain_ai_facts_count` – total cached high-confidence facts
 - Gauges reflecting vector index, episodic buffer, and semantic graph sizes when the C++ backend is active
 
