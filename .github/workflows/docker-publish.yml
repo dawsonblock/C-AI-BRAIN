@@ -75,7 +75,9 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
-          context: ./brain-ai
+          context: .
+          # If your Dockerfile is inside a subdir (e.g., brain-ai/Dockerfile), also set:
+          # file: ./brain-ai/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
