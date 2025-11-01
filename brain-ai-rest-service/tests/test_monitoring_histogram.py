@@ -70,6 +70,16 @@ class HistogramWindowEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("positive", response.json()["detail"])
 
+    def test_post_histogram_window_caps_upper_bound(self):
+        response = self.client.post(
+            "/api/v1/monitoring/histogram_window",
+            json={"sample_size": 200_000},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["histogram_max_samples"], 100_000)
+
 
 if __name__ == "__main__":
     unittest.main()
