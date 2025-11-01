@@ -39,6 +39,26 @@ except Exception as e:
     logger.warning(f"⚠️  Failed to load config.yaml: {e}, using defaults")
     CONFIG = {}
 
+
+def get_config(key_path: str, default=None):
+    """Get config value from YAML or env var. key_path like 'cpp_backend.embedding_dim'"""
+    env_key = key_path.upper().replace('.', '_')
+    env_val = os.getenv(env_key)
+    if env_val is not None:
+        return env_val
+
+    keys = key_path.split('.')
+    val = CONFIG
+    for k in keys:
+        if isinstance(val, dict):
+            val = val.get(k)
+        else:
+            return default
+        if val is None:
+            return default
+    return val
+
+
 app = FastAPI(
     title="Brain-AI REST Service",
     description="REST API for Brain-AI document processing and cognitive query system",
@@ -116,28 +136,6 @@ stats = {
 stats_lock = threading.Lock()
 
 # ==================== Initialize RAG++ Components ====================
-
-# Helper to get config value with env override
-def get_config(key_path: str, default=None):
-    """Get config value from YAML or env var. key_path like 'cpp_backend.embedding_dim'"""
-    # Try environment variable first (uppercase with underscores)
-    env_key = key_path.upper().replace('.', '_')
-    env_val = os.getenv(env_key)
-    if env_val is not None:
-        return env_val
-    
-    # Try config YAML
-    keys = key_path.split('.')
-    val = CONFIG
-    for k in keys:
-        if isinstance(val, dict):
-            val = val.get(k)
-        else:
-            return default
-        if val is None:
-            return default
-    return val
-
 
 API_KEY_ENV = get_config('security.api_key_env', 'BRAIN_AI_API_KEY')
 REQUEST_TIMEOUT_SECONDS = int(get_config('security.request_timeout_seconds', DEFAULT_REQUEST_TIMEOUT))
