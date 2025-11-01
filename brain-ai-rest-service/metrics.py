@@ -25,7 +25,12 @@ def _resolve_histogram_max_samples() -> int:
         return 1024
 
     try:
-        parsed = int(env_value)
+        s = str(env_value).strip().lower().replace("_", "")
+        if s.endswith("k"):
+            base = s[:-1]
+            parsed = int(base) * 1000
+        else:
+            parsed = int(s)
         if parsed <= 0:
             raise ValueError("histogram max samples must be positive")
         return min(parsed, 100_000)
