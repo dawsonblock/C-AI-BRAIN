@@ -90,8 +90,8 @@ class PersistenceManager:
                     if tmp_index_path.exists():
                         try:
                             tmp_index_path.unlink()
-                        except OSError:
-                            pass
+                        except OSError as del_exc:
+                            logger.warning(f"Failed to delete temporary index file {tmp_index_path}: {del_exc}")
                     return False
 
                 os.replace(tmp_index_path, self.vector_index_path)
