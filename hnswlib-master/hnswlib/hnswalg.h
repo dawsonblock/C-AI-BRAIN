@@ -920,17 +920,16 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     * Remove the deleted mark of the node.
     */
     void unmarkDeletedInternal(tableint internalId) {
-            *ll_cur &= ~DELETE_MARK;
-            num_deleted_.fetch_sub(1);
-            if (allow_replace_deleted_) {
-            *ll_cur &= ~DELETE_MARK;
-            num_deleted_ -= 1;
-            if (allow_replace_deleted_) {
-                std::unique_lock <std::mutex> lock_deleted_elements(deleted_elements_lock);
-                deleted_elements.erase(internalId);
-            }
-        } else {
+        assert(internalId < cur_element_count);
+        if (!isMarkedDeleted(internalId)) {
             throw std::runtime_error("The requested to undelete element is not deleted");
+        }
+        unsigned char *ll_cur = ((unsigned char *)get_linklist0(internalId)) + 2;
+        *ll_cur &= ~DELETE_MARK;
+        num_deleted_.fetch_sub(1);
+        if (allow_replace_deleted_) {
+            std::unique_lock<std::mutex> lock_deleted_elements(deleted_elements_lock);
+            deleted_elements.erase(internalId);
         }
     }
 
