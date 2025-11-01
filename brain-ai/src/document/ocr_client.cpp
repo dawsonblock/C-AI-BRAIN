@@ -78,17 +78,21 @@ bool host_allowed(const std::string& host, const std::vector<std::string>& allow
     for (const auto& pattern : allow_list) {
         const std::string pattern_lower = to_lower(pattern);
         if (pattern_lower == host_lower) {
-            return true;
+            return true; // Exact match
         }
 
-        const auto wildcard = pattern_lower.find('*');
-        if (wildcard != std::string::npos) {
-            const std::string prefix = pattern_lower.substr(0, wildcard);
-            const std::string suffix = pattern_lower.substr(wildcard + 1);
-            const bool prefix_ok = prefix.empty() || host_lower.rfind(prefix, 0) == 0;
-            const bool suffix_ok = suffix.empty() || (host_lower.size() >= suffix.size() &&
-                host_lower.compare(host_lower.size() - suffix.size(), suffix.size(), suffix) == 0);
-            if (prefix_ok && suffix_ok) {
+        if (pattern_lower.rfind("*.", 0) == 0) { // Subdomain wildcard: *.example.com
+            std::string suffix = pattern_lower.substr(1); // .example.com
+            if (host_lower.length() > suffix.length() &&
+                host_lower.rfind(suffix) == host_lower.length() - suffix.length()) {
+                // Ensure it's not just the suffix, e.g. host is not ".example.com"
+                if (host_lower.length() > suffix.length() && host_lower.find('.') != std::string::npos) {
+                    return true;
+                }
+            }
+        } else if (pattern_lower.length() > 2 && pattern_lower.back() == '*' && pattern_lower[pattern_lower.length() - 2] == '.') { // Prefix wildcard: service.*
+            std::string prefix = pattern_lower.substr(0, pattern_lower.length() - 1); // service.
+            if (host_lower.rfind(prefix, 0) == 0 && host_lower.find('.') != std::string::npos) {
                 return true;
             }
         }
