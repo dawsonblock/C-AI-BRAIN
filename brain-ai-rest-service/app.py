@@ -174,12 +174,7 @@ async def enforce_payload_limits(request: Request) -> None:
         return
 
     body = await request.body()
-    request._body = body  # allow downstream handlers to reuse the buffered body
-    async def _receive():  # pragma: no cover - Starlette internals
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request._receive = _receive  # type: ignore[attr-defined]
-
+    request.state.body = body  # allow downstream handlers to reuse the buffered body
     body_size = len(body)
     if body_size > MAX_UPLOAD_BYTES:
         logger.warning("Payload rejected (%d bytes)", body_size)
