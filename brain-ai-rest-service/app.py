@@ -5,7 +5,8 @@ REST API wrapper for Brain-AI C++ library providing document processing and quer
 """
 
 from fastapi import FastAPI, HTTPException, File, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import logging
@@ -15,6 +16,7 @@ from datetime import datetime
 import yaml
 import os
 from pathlib import Path
+import threading
 
 # Configure logging
 logging.basicConfig(
@@ -46,9 +48,52 @@ SERVICE_INFO = {
     "started_at": datetime.now().isoformat()
 }
 
-# Statistics tracking
-import threading
+# ==================== Middleware Configuration ====================
 
+# CORS
+cors_enabled = CONFIG.get('security', {}).get('cors_enabled', True)
+if cors_enabled:
+    cors_origins = CONFIG.get('security', {}).get('cors_origins', ["*"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    logger.info(f"✅ CORS enabled for origins: {cors_origins}")
+
+# Import middleware (after app creation)
+try:
+    from middleware import APIKeyMiddleware, RequestTrackingMiddleware
+    from metrics import metrics as metrics_collector
+    
+    # Request tracking
+    request_tracker = RequestTrackingMiddleware(app)
+    app.add_middleware(RequestTrackingMiddleware)
+    logger.info("✅ Request tracking middleware added")
+    
+    # API key authentication
+    api_key_required = CONFIG.get('security', {}).get(
+        'api_key_required', False
+    )
+    api_key_env = CONFIG.get('security', {}).get(
+        'api_key_env', 'BRAIN_AI_API_KEY'
+    )
+    app.add_middleware(
+        APIKeyMiddleware,
+        api_key_required=api_key_required,
+        api_key_env=api_key_env
+    )
+    
+    # Alias for convenience
+    metrics = metrics_collector
+except ImportError as e:
+    logger.warning(f"⚠️  Middleware/metrics not available: {e}")
+    request_tracker = None
+    metrics = None
+
+# Statistics tracking
 stats = {
     "total_documents": 0,
     "successful_documents": 0,
@@ -543,6 +588,34 @@ async def health_check():
         }
     )
 
+@app.get("/metrics")
+async def get_metrics():
+    """Prometheus metrics endpoint"""
+    prometheus_enabled = get_config('monitoring.prometheus_enabled', False)
+    if not prometheus_enabled:
+        raise HTTPException(status_code=404, detail="Metrics disabled")
+    
+    # Update gauges
+    if cognitive_handler and USE_CPP_BACKEND:
+        cpp_stats = cognitive_handler.get_stats()
+        metrics.set_gauge("brain_ai_vector_index_size", cpp_stats.get("vector_index_size", 0))
+        metrics.set_gauge("brain_ai_episodic_buffer_size", cpp_stats.get("episodic_buffer_size", 0))
+        metrics.set_gauge("brain_ai_semantic_network_size", cpp_stats.get("semantic_network_size", 0))
+    
+    if facts_store:
+        facts_stats = facts_store.get_stats()
+        metrics.set_gauge("brain_ai_facts_count", facts_stats.get("fact_count", 0))
+    
+    # Request stats
+    if request_tracker:
+        tracker_stats = request_tracker.get_stats()
+        metrics.set_gauge("brain_ai_total_requests", tracker_stats["total_requests"])
+        metrics.set_gauge("brain_ai_total_errors", tracker_stats["total_errors"])
+        metrics.set_gauge("brain_ai_error_rate", tracker_stats["error_rate"])
+        metrics.set_gauge("brain_ai_avg_latency_ms", tracker_stats["avg_latency_ms"])
+    
+    return PlainTextResponse(content=metrics.export_prometheus(), media_type="text/plain")
+
 @app.get("/api/v1/stats", response_model=StatsResponse)
 async def get_statistics():
     """Get service statistics"""
@@ -767,6 +840,8 @@ async def answer_question(request: dict):
         
         # Retrieve from vector store
         context_chunks = []
+        context_text = ""
+        
         if cognitive_handler and USE_CPP_BACKEND:
             # Build QueryConfig
             import brain_ai_py
@@ -782,12 +857,31 @@ async def answer_question(request: dict):
                 config=config
             )
             
-            # Extract context (simplified - in production, parse response properly)
-            context = response.response if hasattr(response, 'response') else "No context retrieved."
+            # Extract context chunks from response
+            # In real implementation, parse the response to get individual chunks
+            context_text = response.response if hasattr(response, 'response') else ""
             
-            # TODO: Add re-ranking if reranker is available
-            # if reranker and context_chunks:
-            #     context_chunks = reranker.rerank_with_docs(question, context_chunks, top_k=10)
+            # For re-ranking, we need structured chunks - parse from context_text
+            # This is a simplified version; in production, the C++ backend should return structured data
+            if context_text and context_text != "No relevant documents found.":
+                # Split by paragraphs or sentences (simplified chunking)
+                context_chunks = [chunk.strip() for chunk in context_text.split('\n\n') if chunk.strip()]
+            
+            # Apply re-ranking if enabled
+            reranker_enabled = get_config('retrieval.reranker.enabled', False)
+            if reranker_enabled and reranker and context_chunks:
+                logger.info(f"🔄 Re-ranking {len(context_chunks)} chunks...")
+                rerank_top_k = get_config('retrieval.reranker.rerank_top_k', 10)
+                
+                # Re-rank the chunks
+                reranked_results = reranker.rerank(question, context_chunks, top_k=rerank_top_k)
+                
+                # Reorder chunks by score
+                reranked_chunks = [context_chunks[idx] for idx, score in reranked_results]
+                context_text = "\n\n".join(reranked_chunks)
+                logger.info(f"✅ Re-ranked to top {len(reranked_results)} chunks")
+            
+            context = context_text if context_text else "No relevant context retrieved."
         else:
             context = "No vector store available - using empty context."
         

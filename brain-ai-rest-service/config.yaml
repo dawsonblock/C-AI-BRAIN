@@ -136,7 +136,7 @@ ocr:
 
 # Monitoring and Observability
 monitoring:
-  prometheus_enabled: false
+  prometheus_enabled: true
   metrics_port: 9090
   health_check_interval: 30
   
@@ -169,10 +169,10 @@ persistence:
 
 # Security and rate limiting
 security:
-  api_key_required: false
+  api_key_required: true
   api_key_env: "BRAIN_AI_API_KEY"
   cors_enabled: true
-  cors_origins: ["*"]
+  cors_origins: ["http://localhost:3000", "http://localhost:8080"]
   max_request_size_mb: 10
   
   rate_limiting:
