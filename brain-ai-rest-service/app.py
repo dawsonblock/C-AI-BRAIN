@@ -243,16 +243,7 @@ try:
     from brain_ai import CognitiveHandler as BrainAICognitiveHandler, QueryConfig as BrainAIQueryConfig  # type: ignore
     logger.info("✅ brain_ai wheel detected")
 except ImportError:
-    try:
-        import brain_ai_py as _brain_ai_py  # type: ignore
-
-        BrainAICognitiveHandler = _brain_ai_py.CognitiveHandler
-        BrainAIQueryConfig = _brain_ai_py.QueryConfig
-        logger.info("✅ brain_ai_py extension detected")
-    except ImportError:
-        logger.error("❌ Brain-AI bindings not found; REST endpoints will use mock backend")
-
-
+    logger.error("❌ Brain-AI wheel bindings not found; REST endpoints will use mock backend")
 # Try to import C++ backend
 USE_CPP_BACKEND = False
 cognitive_handler = None
