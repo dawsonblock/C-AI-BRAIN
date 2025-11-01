@@ -151,8 +151,16 @@ if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
     target_link_libraries(brain_ai_py PRIVATE brain_ai_lib)
     message(STATUS "✅ Python bindings enabled")
     
+    pybind11_add_module(brain_ai_core bindings/pybind_module.cpp)
+    target_link_libraries(brain_ai_core PRIVATE brain_ai_lib)
+    set_target_properties(brain_ai_core PROPERTIES
+        OUTPUT_NAME "brain_ai_core"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python"
+    )
+    message(STATUS "✅ brain_ai_core pybind module enabled")
+
     # Install Python module
-    install(TARGETS brain_ai_py
+    install(TARGETS brain_ai_py brain_ai_core
             LIBRARY DESTINATION .
             RUNTIME DESTINATION .
             ARCHIVE DESTINATION .)

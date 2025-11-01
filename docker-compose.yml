@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    volumes:
+      - ./data:/srv/data
+
+  rest:
+    build:
+      context: .
+      dockerfile: Dockerfile.rest
+    environment:
+      SAFE_MODE: "1"
+      LLM_STUB: "1"
+      EMBEDDINGS_BACKEND: "cpu"
+      API_KEY: "devkey"
+      REQUIRE_API_KEY_FOR_WRITES: "1"
+      INDEX_SNAPSHOT: "/srv/data/index.json"
+      KILL_PATH: "/srv/data/brain.KILL"
+    volumes:
+      - ./data:/srv/data
+    ports:
+      - "5001:5001"
+    depends_on:
+      - core
+
+  ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+    ports:
+      - "6001:6001"
+
+  seed:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      - rest
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      for i in $(seq 1 60); do
+        if curl -sf http://rest:5001/readyz >/dev/null; then
+          break
+        fi
+        sleep 1
+      done &&
+      curl -s -X POST http://rest:5001/index
+        -H 'X-API-Key: devkey'
+        -H 'Content-Type: application/json'
+        -d '{"doc_id":"A","text":"GPUs accelerate deep learning training by parallelizing linear algebra."}'
+    restart: "no"
