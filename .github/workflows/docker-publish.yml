@@ -16,8 +16,8 @@ on:
     branches: [ "main" ]
 
 env:
-  # Use docker.io for Docker Hub if empty
-  REGISTRY: ghcr.io
+  # Target registry (defaults to GHCR, override via workflow input or env)
+  REGISTRY: ${{ inputs.registry || env.REGISTRY || 'ghcr.io' }}
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
 
