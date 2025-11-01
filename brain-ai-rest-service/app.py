@@ -191,10 +191,17 @@ async def enforce_payload_limits(request: Request) -> None:
     if not body:
         return
 
+    content_type = request.headers.get("content-type", "").lower()
+    is_text_based = "application/json" in content_type or "text/" in content_type
+
+    if not is_text_based:
+        return # Skip token counting for binary data
+
     try:
-        decoded = body.decode("utf-8", errors="ignore")
-    except Exception:
-        return  # Binary payloads already constrained by size check
+        decoded = body.decode("utf-8")
+    except UnicodeDecodeError:
+        # Non-UTF8 payload for a content-type that should be text; skip token check.
+        return
 
     token_count = len(decoded.split())
     if token_count > MAX_TOKEN_COUNT:
