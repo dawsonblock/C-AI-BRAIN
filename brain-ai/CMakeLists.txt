@@ -41,6 +41,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 
 # hnswlib for vector search (pinned commit for reproducibility)
+# Pinned to commit 54ba206166f6a4d30b06d938753c75b6b036c6aa after v0.7.0 to ensure compatibility with C++17 and fix issue #123 (see https://github.com/nmslib/hnswlib/issues/123)
 set(HNSWLIB_GIT_TAG 54ba206166f6a4d30b06d938753c75b6b036c6aa CACHE STRING "Pinned hnswlib commit")
 FetchContent_Declare(
     hnswlib
