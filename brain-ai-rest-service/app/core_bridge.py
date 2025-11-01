@@ -121,7 +121,8 @@ class CoreBridge:
                 self._module.index_document(doc_id, text, payload)
             except TypeError:
                 self._module.index_document(doc_id, text)
-        self._memory.index_document(doc_id, payload, text)
+        else:
+            self._memory.index_document(doc_id, payload, text)
 
     def search(
         self, query: str, top_k: int, embedding: Iterable[float]
