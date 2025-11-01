@@ -100,20 +100,30 @@ bool host_allowed(const std::string& host, const std::vector<std::string>& allow
     return false;
 }
 
+// Restrict base path to a safe prefix to prevent endpoint abuse
 std::string sanitize_path(const std::string& raw_path) {
+    // Treat empty or "/" as no base path
     if (raw_path.empty() || raw_path == "/") {
         return std::string();
     }
+
+    // Reject query strings or fragments if accidentally included
+    if (raw_path.find('?') != std::string::npos || raw_path.find('#') != std::string::npos) {
+        throw std::runtime_error("OCR service path must not include query or fragment");
+    }
+
     // Disallow traversal and non-canonical elements
     if (raw_path.find("..") != std::string::npos) {
         throw std::runtime_error("OCR service path must not contain '..'");
     }
+
     // Disallow backslashes and control characters
     for (unsigned char c : raw_path) {
         if (c == '\\' || std::iscntrl(c)) {
             throw std::runtime_error("OCR service path contains invalid characters");
         }
     }
+
     // Normalize repeated slashes
     std::string path;
     path.reserve(raw_path.size());
@@ -133,6 +143,13 @@ std::string sanitize_path(const std::string& raw_path) {
     while (path.size() > 1 && path.back() == '/') {
         path.pop_back();
     }
+
+    // Enforce a strict allowed base prefix, e.g., "/v1/ocr"
+    static const std::regex allowed_base(R"(^/v1/ocr(?:/.*)?$)", std::regex::icase);
+    if (!std::regex_match(path, allowed_base)) {
+        throw std::runtime_error("OCR service path not permitted: " + path);
+    }
+
     return path;
 }
 
