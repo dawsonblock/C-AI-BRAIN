@@ -40,7 +40,13 @@ services:
       - rest
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      sleep 5 && curl -s -X POST http://rest:5001/index
+      for i in $(seq 1 60); do
+        if curl -sf http://rest:5001/readyz >/dev/null; then
+          break
+        fi
+        sleep 1
+      done &&
+      curl -s -X POST http://rest:5001/index
         -H 'X-API-Key: devkey'
         -H 'Content-Type: application/json'
         -d '{"doc_id":"A","text":"GPUs accelerate deep learning training by parallelizing linear algebra."}'
