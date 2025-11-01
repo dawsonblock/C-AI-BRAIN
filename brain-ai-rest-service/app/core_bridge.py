@@ -118,9 +118,12 @@ class CoreBridge:
         payload = list(embedding)
         if self._module:
             try:
-                self._module.index_document(doc_id, text, payload)
-            except TypeError:
-                self._module.index_document(doc_id, text)
+                if payload:
+                    self._module.index_document(doc_id, text, payload)
+                else:
+                    self._module.index_document(doc_id, text)
+            except TypeError as exc:
+                raise TypeError(f"pybind index_document failed for doc_id={doc_id}: {exc}") from exc
         else:
             self._memory.index_document(doc_id, payload, text)
 
