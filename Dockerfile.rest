@@ -1,0 +1,36 @@
+FROM ubuntu:22.04 AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    python3-dev \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/build
+COPY brain-ai /opt/build/brain-ai
+
+RUN cd brain-ai && \
+    mkdir -p build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    cmake --build . -j
+
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN adduser --uid 1001 --disabled-password --gecos "" brain
+
+WORKDIR /srv/app
+COPY brain-ai-rest-service /srv/app/brain-ai-rest-service
+COPY --from=builder /opt/build/brain-ai/build/python/brain_ai_core*.so /usr/local/lib/python3.11/site-packages/
+
+RUN pip install --no-cache-dir -r brain-ai-rest-service/requirements.txt
+
+ENV SAFE_MODE=1 \
+    LLM_STUB=1 \
+    EMBEDDINGS_BACKEND=cpu \
+    API_KEY=devkey \
+    REQUIRE_API_KEY_FOR_WRITES=1
+
+USER brain
+EXPOSE 5001
+CMD ["uvicorn", "app.app:app", "--host", "0.0.0.0", "--port", "5001"]

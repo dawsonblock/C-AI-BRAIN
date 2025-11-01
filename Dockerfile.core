@@ -1,0 +1,25 @@
+FROM ubuntu:22.04 AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    python3-dev \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/build
+COPY brain-ai /opt/build/brain-ai
+
+RUN cd brain-ai && \
+    mkdir -p build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    cmake --build . -j
+
+FROM ubuntu:22.04
+RUN useradd --uid 1001 --create-home brain
+WORKDIR /srv/brain-ai
+COPY --from=builder /opt/build/brain-ai/build /srv/brain-ai/build
+COPY --from=builder /opt/build/brain-ai/include /srv/brain-ai/include
+
+USER 1001
+CMD ["/bin/sh", "-c", "sleep infinity"]
