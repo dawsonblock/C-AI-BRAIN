@@ -220,15 +220,18 @@ struct OCRClient::Impl {
 OCRClient::OCRClient(const OCRConfig& config)
     : config_(config) {
     try {
-        if (config_.timeout != std::chrono::seconds(30)) {
-            auto legacy_ms = std::chrono::duration_cast<std::chrono::milliseconds>(config_.timeout);
+        // Create a local copy to avoid mutating the caller's config object
+        OCRConfig local_config = config;
+        if (local_config.timeout != std::chrono::seconds(30)) {
+            auto legacy_ms = std::chrono::duration_cast<std::chrono::milliseconds>(local_config.timeout);
             if (legacy_ms.count() > 0) {
-                config_.connect_timeout = std::min(config_.connect_timeout, legacy_ms);
-                config_.read_timeout = legacy_ms;
-                config_.write_timeout = legacy_ms;
+                local_config.connect_timeout = std::min(local_config.connect_timeout, legacy_ms);
+                local_config.read_timeout = legacy_ms;
+                local_config.write_timeout = legacy_ms;
             }
         }
 
+        config_ = local_config;
         pimpl_ = std::make_unique<Impl>(config_);
         Logger::info("OCRClient", "Initialized with service URL: " + config_.service_url);
     } catch (const std::exception& e) {
