@@ -137,15 +137,19 @@ class CoreBridge:
                     results = self._module.search(query, top_k, payload)
                 else:
                     results = self._module.search(query, top_k)
-            except TypeError as exc:
-                # If we had a payload, this is a contract bug; surface it.
-                if payload:
-                    raise TypeError(f"pybind search failed with embedding for query={query!r}: {exc}") from exc
-                # Otherwise, rethrow since even the no-embedding path failed.
-                raise
-            if results:
+                # Successful call: do not fall back to memory even if empty
                 return [(doc_id, float(score)) for doc_id, score in results]
-
+            except TypeError as exc:
+                if payload:
+                    raise TypeError(
+                        f"pybind search failed with embedding for query={query!r}: {exc}"
+                    ) from exc
+                # Re-raise for no-embedding path too; avoid silent fallback merge
+                raise
+            except Exception as exc:
+                # Log and fall back only on genuine failures
+                LOGGER.warning("pybind search failed; using memory fallback: %s", exc)
+        # Fallback path when module is unavailable or failed
         return self._memory.search(payload, top_k)
 
     def save_index(self, path: os.PathLike[str] | str) -> None:
