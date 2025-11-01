@@ -109,11 +109,12 @@ try:
     hist_samples_config = get_config('monitoring.histogram_max_samples')
     if hist_samples_config is not None:
         try:
-            metrics.set_histogram_max_samples(int(hist_samples_config))
+            # Let metrics validate and coerce; do not pre-cast here
+            metrics.set_histogram_max_samples(hist_samples_config)
             logger.info("✅ Histogram sample window set to %s", metrics.histogram_max_samples)
-        except (ValueError, TypeError) as exc:
+        except Exception as exc:
             logger.warning(
-                "⚠️  Invalid monitoring.histogram_max_samples=%s (%s); using %s",
+                "⚠️  Invalid monitoring.histogram_max_samples=%r (%s); using %s",
                 hist_samples_config,
                 exc,
                 metrics.histogram_max_samples,
