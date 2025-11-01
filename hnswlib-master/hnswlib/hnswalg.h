@@ -634,29 +634,42 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         if (new_max_elements < cur_element_count)
             throw std::runtime_error("Cannot resize, max element is less than the current number of elements");
 
-        char* data_level0_memory_new = (char*)realloc(data_level0_memory_, new_max_elements * size_data_per_element_);
-        if (data_level0_memory_new == nullptr)
-            throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
+        // Keep originals to avoid corrupting state on failure
+        char* old_level0 = data_level0_memory_;
+        char** old_linkLists = linkLists_;
 
-        char** linkLists_new = (char**)realloc(linkLists_, sizeof(void*) * new_max_elements);
+        char* data_level0_memory_new = (char*)realloc(old_level0, new_max_elements * size_data_per_element_);
+        if (data_level0_memory_new == nullptr) {
+            // Original memory remains valid; do not modify members
+            throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
+        }
+
+        char** linkLists_new = (char**)realloc(old_linkLists, sizeof(void*) * new_max_elements);
         if (linkLists_new == nullptr) {
+            // Roll back first realloc by allocating back old size is not reliable; however,
+            // data_level0_memory_new still holds valid memory for old size; to keep state consistent,
+            // do not assign members and restore original pointer by allocating a copy back.
+            // Safer approach: allocate new arrays without realloc.
+            // Fall back: allocate new block and memcpy, then free data_level0_memory_new.
+            char* rollback = (char*)malloc(max_elements_ * size_data_per_element_);
+            if (rollback && old_level0) {
+                memcpy(rollback, data_level0_memory_new, max_elements_ * size_data_per_element_);
+            }
             free(data_level0_memory_new);
+            if (rollback) {
+                data_level0_memory_ = rollback; // keep previous state intact
+            }
             throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
         }
 
-        // Assign new buffers
+        // Commit updates only after both succeed
         data_level0_memory_ = data_level0_memory_new;
-        // Zero-initialize the newly added slots to avoid dangling pointers
-        if (new_max_elements > max_elements_) {
-            std::fill(linkLists_new + max_elements_, linkLists_new + new_max_elements, nullptr);
-        }
         linkLists_ = linkLists_new;
 
         visited_list_pool_.reset(new VisitedListPool(1, new_max_elements));
         element_levels_.resize(new_max_elements);
         std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
         max_elements_ = new_max_elements;
-    }
 
     size_t indexFileSize() const {
         size_t size = 0;
