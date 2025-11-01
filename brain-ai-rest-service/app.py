@@ -375,6 +375,10 @@ class OCRConfig(BaseModel):
 class HistogramConfigRequest(BaseModel):
     sample_size: int
 
+
+class HistogramConfigResponse(BaseModel):
+    histogram_max_samples: int
+
 class DocumentProcessRequest(BaseModel):
     doc_id: str
     file_path: Optional[str] = None
@@ -768,7 +772,7 @@ async def get_metrics(request: Request):
     
     return PlainTextResponse(content=metrics.export_prometheus(), media_type="text/plain")
 
-@api_router.post("/monitoring/histogram_window")
+@api_router.post("/monitoring/histogram_window", response_model=HistogramConfigResponse)
 async def configure_histogram_window(request: HistogramConfigRequest):
     """Adjust histogram rolling window for metrics latency tracking."""
     if metrics is None:
@@ -781,11 +785,16 @@ async def configure_histogram_window(request: HistogramConfigRequest):
 
     logger.info("Histogram sample window adjusted to %s", metrics.histogram_max_samples)
 
-    return {
-        "success": True,
-        "histogram_max_samples": metrics.histogram_max_samples,
-        "note": "Setting applies to future histogram observations"
-    }
+    return HistogramConfigResponse(histogram_max_samples=metrics.histogram_max_samples)
+
+
+@api_router.get("/monitoring/histogram_window", response_model=HistogramConfigResponse)
+async def get_histogram_window():
+    """Report current histogram sample window size."""
+    if metrics is None:
+        raise HTTPException(status_code=503, detail="Metrics subsystem unavailable")
+
+    return HistogramConfigResponse(histogram_max_samples=metrics.histogram_max_samples)
 
 @api_router.get("/stats", response_model=StatsResponse)
 async def get_statistics():
