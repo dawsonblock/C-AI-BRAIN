@@ -4,7 +4,7 @@ pydantic==2.5.0
 python-multipart==0.0.6
 pyyaml==6.0.1
 prometheus-client==0.20.0
-numpy==1.26.4
+numpy~=1.26.4
 
 # Embeddings and reranking
 sentence-transformers==3.3.1
