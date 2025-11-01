@@ -49,6 +49,8 @@ def _client_ip(request: Request) -> str:
     return "unknown"
 
 
+import secrets
+
 def _require_api_key(request: Request) -> None:
     if not settings.require_api_key_for_writes:
         return
@@ -68,7 +70,7 @@ def _require_api_key(request: Request) -> None:
     if not candidate:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing API key")
 
-    if candidate != expected:
+    if not secrets.compare_digest(candidate, expected):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid API key")
 
 
