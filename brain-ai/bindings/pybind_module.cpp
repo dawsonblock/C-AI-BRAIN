@@ -129,7 +129,17 @@ void load_index(const std::string &path) {
         config.auto_save = false;
         g_manager = std::make_unique<IndexManager>(config);
     }
-    g_manager->load(path);
+    try {
+        if (!g_manager->load(path)) {
+            throw std::runtime_error("Failed to load index from " + path);
+        }
+        // Validate embedding dimension after load if supported by IndexManager
+        if (g_manager->embedding_dim() != kEmbeddingDim) {
+            throw std::runtime_error("Loaded index embedding_dim mismatch");
+        }
+    } catch (const std::exception &e) {
+        throw std::runtime_error(std::string("Error loading index: ") + e.what());
+    }
 }
 
 PYBIND11_MODULE(brain_ai_core, m) {
