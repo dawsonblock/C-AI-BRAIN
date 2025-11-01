@@ -248,6 +248,36 @@ Response:
 }
 ```
 
+
+### Monitoring & Metrics
+
+**GET /metrics**
+Prometheus-formatted scrape point (disabled by default—set `monitoring.prometheus_enabled: true` in `config.yaml`).
+
+Exports include:
+- `brain_ai_requests_total{method="POST",result="success"}` – per-method request counter
+- `brain_ai_request_latency_seconds` – raw latency samples with p50 / p95 / p99 summaries (keeps the last 1,024 samples per method/result label while tracking full totals)
+- `brain_ai_facts_count` – total cached high-confidence facts
+- Gauges reflecting vector index, episodic buffer, and semantic graph sizes when the C++ backend is active
+
+Tuning:
+- `BRAIN_AI_METRICS_HIST_MAX_SAMPLES` controls the rolling window size for latency histograms (default 1024, capped at 100k, non-positive values ignored).
+- `monitoring.histogram_max_samples` (in `config.yaml`) provides the same override via configuration.
+
+Runtime adjustment:
+```bash
+# Update window size
+curl -X POST http://localhost:5001/api/v1/monitoring/histogram_window \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $BRAIN_AI_API_KEY" \
+  -d '{"sample_size": 2048}'
+
+# Inspect current size
+curl -H "X-API-Key: $BRAIN_AI_API_KEY" \
+  http://localhost:5001/api/v1/monitoring/histogram_window
+```
+
+
 **GET /api/v1/stats**
 Service statistics.
 
@@ -279,6 +309,13 @@ pip install -r requirements.txt
 ```bash
 python app.py
 # Service runs on http://localhost:5001
+```
+
+### Monitoring Endpoint Tests
+
+```bash
+# Requires FastAPI test dependencies (install via `pip install fastapi uvicorn` if not already available)
+python -m unittest discover tests
 ```
 
 ### Test Endpoints
