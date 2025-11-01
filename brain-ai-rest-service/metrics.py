@@ -172,13 +172,13 @@ class MetricsCollector:
 
                 # Percentiles
                 if sample_count > 0:
-                    p50_idx = int(sample_count * 0.50)
-                    p95_idx = int(sample_count * 0.95)
-                    p99_idx = int(sample_count * 0.99)
+                    p50_idx = int((sample_count - 1) * 0.50)
+                    p95_idx = int((sample_count - 1) * 0.95)
+                    p99_idx = int((sample_count - 1) * 0.99)
 
-                    lines.append(f"{key}_p50 {sorted_values[min(p50_idx, sample_count-1)]:.4f}")
-                    lines.append(f"{key}_p95 {sorted_values[min(p95_idx, sample_count-1)]:.4f}")
-                    lines.append(f"{key}_p99 {sorted_values[min(p99_idx, sample_count-1)]:.4f}")
+                    lines.append(f"{key}_p50 {sorted_values[p50_idx]:.4f}")
+                    lines.append(f"{key}_p95 {sorted_values[p95_idx]:.4f}")
+                    lines.append(f"{key}_p99 {sorted_values[p99_idx]:.4f}")
             lines.append("")
         
         return "\n".join(lines)
