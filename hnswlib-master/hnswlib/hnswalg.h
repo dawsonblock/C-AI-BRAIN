@@ -634,23 +634,27 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         if (new_max_elements < cur_element_count)
             throw std::runtime_error("Cannot resize, max element is less than the current number of elements");
 
+        char* data_level0_memory_new = (char*)realloc(data_level0_memory_, new_max_elements * size_data_per_element_);
+        if (data_level0_memory_new == nullptr)
+            throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
+
+        char** linkLists_new = (char**)realloc(linkLists_, sizeof(void*) * new_max_elements);
+        if (linkLists_new == nullptr) {
+            // Attempt to revert the first realloc, though it might not be possible to get the original size.
+            // A safer approach is to avoid realloc and use malloc/memcpy/free.
+            // For now, we at least free the successfully reallocated memory to prevent a leak on this error path.
+            free(data_level0_memory_new);
+            throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
+        }
+    
+        data_level0_memory_ = data_level0_memory_new;
+        linkLists_ = linkLists_new;
+
         visited_list_pool_.reset(new VisitedListPool(1, new_max_elements));
 
         element_levels_.resize(new_max_elements);
 
         std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
-
-        // Reallocate base layer
-        char * data_level0_memory_new = (char *) realloc(data_level0_memory_, new_max_elements * size_data_per_element_);
-        if (data_level0_memory_new == nullptr)
-            throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
-        data_level0_memory_ = data_level0_memory_new;
-
-        // Reallocate all other layers
-        char ** linkLists_new = (char **) realloc(linkLists_, sizeof(void *) * new_max_elements);
-        if (linkLists_new == nullptr)
-            throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
-        linkLists_ = linkLists_new;
 
         max_elements_ = new_max_elements;
     }
