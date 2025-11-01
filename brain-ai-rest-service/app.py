@@ -85,6 +85,19 @@ try:
 
     # Alias for convenience
     metrics = metrics_collector
+
+    hist_samples_config = get_config('monitoring.histogram_max_samples')
+    if hist_samples_config is not None:
+        try:
+            metrics.set_histogram_max_samples(int(hist_samples_config))
+            logger.info("✅ Histogram sample window set to %s", metrics.histogram_max_samples)
+        except (ValueError, TypeError) as exc:
+            logger.warning(
+                "⚠️  Invalid monitoring.histogram_max_samples=%s (%s); using %s",
+                hist_samples_config,
+                exc,
+                metrics.histogram_max_samples,
+            )
 except ImportError as e:
     logger.warning(f"⚠️  Middleware/metrics not available: {e}")
     metrics = None

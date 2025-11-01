@@ -5,8 +5,8 @@ Tracked series (by convention):
 - Counter ``brain_ai_requests_total`` labelled by ``method`` and ``result`` capturing
   high-level request throughput.
 - Histogram ``brain_ai_request_latency_seconds`` (same labels) storing raw latency
-  samples for percentile export (keeps up to 1,024 recent samples per label while
-  tracking full counts/sums).
+  samples for percentile export (keeps up to 1,024 recent samples per label by default
+  while tracking full counts/sums; configurable via env/config).
 - Various gauges populated by the C++ bindings, facts store, and other subsystems.
 """
 import os
@@ -57,6 +57,26 @@ class MetricsCollector:
         self.histogram_stats = defaultdict(lambda: {"count": 0, "sum": 0.0})
         self.start_time = time.time()
         self._histogram_max_samples = max_hist_samples
+    
+    @property
+    def histogram_max_samples(self) -> int:
+        return self._histogram_max_samples
+
+    def set_histogram_max_samples(self, max_samples: int) -> None:
+        """Adjust the rolling window for histogram samples."""
+        try:
+            parsed = int(max_samples)
+        except Exception as exc:
+            raise ValueError(f"max_samples must be int-compatible: {exc}") from exc
+
+        if parsed <= 0:
+            raise ValueError("max_samples must be positive")
+
+        parsed = min(parsed, 100_000)
+        self._histogram_max_samples = parsed
+
+        for key, existing in list(self.histograms.items()):
+            self.histograms[key] = deque(existing, maxlen=parsed)
     
     def inc_counter(self, name: str, value: int = 1, labels: Optional[Dict] = None):
         """Increment a counter metric"""
