@@ -122,10 +122,13 @@ class CoreBridge:
                     self._module.index_document(doc_id, text, payload)
                 else:
                     self._module.index_document(doc_id, text)
+                # Keep memory view in sync for text/hit enrichment
+                self._memory.index_document(doc_id, payload, text)
+                return
             except TypeError as exc:
                 raise TypeError(f"pybind index_document failed for doc_id={doc_id}: {exc}") from exc
-        else:
-            self._memory.index_document(doc_id, payload, text)
+        # Fallback only
+        self._memory.index_document(doc_id, payload, text)
 
     def search(
         self, query: str, top_k: int, embedding: Iterable[float]
