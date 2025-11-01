@@ -76,19 +76,17 @@ if cors_enabled:
 
 # Import middleware (after app creation)
 try:
-    from middleware import RequestTrackingMiddleware
+    from middleware import RequestTrackingMiddleware, get_request_tracker
     from metrics import metrics as metrics_collector
-    
+
     # Request tracking
-    request_tracker = RequestTrackingMiddleware(app)
     app.add_middleware(RequestTrackingMiddleware)
     logger.info("✅ Request tracking middleware added")
-    
+
     # Alias for convenience
     metrics = metrics_collector
 except ImportError as e:
     logger.warning(f"⚠️  Middleware/metrics not available: {e}")
-    request_tracker = None
     metrics = None
 
 # Statistics tracking
@@ -715,12 +713,15 @@ async def health_check():
     )
 
 @app.get("/metrics")
-async def get_metrics():
+async def get_metrics(request: Request):
     """Prometheus metrics endpoint"""
     prometheus_enabled = get_config('monitoring.prometheus_enabled', False)
     if not prometheus_enabled:
         raise HTTPException(status_code=404, detail="Metrics disabled")
     
+    if metrics is None:
+        raise HTTPException(status_code=503, detail="Metrics subsystem unavailable")
+
     # Update gauges
     if cognitive_handler and USE_CPP_BACKEND:
         cpp_stats = cognitive_handler.get_stats()
@@ -733,8 +734,14 @@ async def get_metrics():
         metrics.set_gauge("brain_ai_facts_count", facts_stats.get("fact_count", 0))
     
     # Request stats
-    if request_tracker:
-        tracker_stats = request_tracker.get_stats()
+    tracker = None
+    if 'get_request_tracker' in globals():
+        tracker = get_request_tracker()
+    if tracker is None:
+        tracker = getattr(request.app.state, "request_tracker", None)
+
+    if tracker:
+        tracker_stats = tracker.get_stats()
         metrics.set_gauge("brain_ai_total_requests", tracker_stats["total_requests"])
         metrics.set_gauge("brain_ai_total_errors", tracker_stats["total_errors"])
         metrics.set_gauge("brain_ai_error_rate", tracker_stats["error_rate"])
@@ -746,22 +753,25 @@ async def get_metrics():
 async def get_statistics():
     """Get service statistics"""
     uptime = (datetime.now() - datetime.fromisoformat(SERVICE_INFO["started_at"])).total_seconds()
-    
+
+    with stats_lock:
+        snapshot = stats.copy()
+
     avg_query_time = (
-        stats["total_query_time_ms"] / stats["total_queries"]
-        if stats["total_queries"] > 0 else 0
+        snapshot["total_query_time_ms"] / snapshot["total_queries"]
+        if snapshot["total_queries"] > 0 else 0
     )
-    
+
     avg_document_time = (
-        stats["total_document_time_ms"] / stats["total_documents"]
-        if stats["total_documents"] > 0 else 0
+        snapshot["total_document_time_ms"] / snapshot["total_documents"]
+        if snapshot["total_documents"] > 0 else 0
     )
-    
+
     return StatsResponse(
-        total_documents=stats["total_documents"],
-        successful_documents=stats["successful_documents"],
-        total_queries=stats["total_queries"],
-        successful_queries=stats["successful_queries"],
+        total_documents=snapshot["total_documents"],
+        successful_documents=snapshot["successful_documents"],
+        total_queries=snapshot["total_queries"],
+        successful_queries=snapshot["successful_queries"],
         episodic_buffer_size=len(brain_ai.episodes),
         vector_index_size=len(brain_ai.vector_index),
         semantic_network_nodes=0,  # Mock value
@@ -774,18 +784,20 @@ async def get_statistics():
 async def process_document(request: DocumentProcessRequest):
     """Process a single document"""
     logger.info(f"Processing document: {request.doc_id}")
-    
-    stats["total_documents"] += 1
-    
+
+    with stats_lock:
+        stats["total_documents"] += 1
+
     result = await run_with_timeout(brain_ai.process_document(request))
-    
-    if result.success:
-        stats["successful_documents"] += 1
-    else:
-        stats["failed_documents"] += 1
-    
-    stats["total_document_time_ms"] += result.processing_time_ms
-    
+
+    with stats_lock:
+        if result.success:
+            stats["successful_documents"] += 1
+        else:
+            stats["failed_documents"] += 1
+
+        stats["total_document_time_ms"] += result.processing_time_ms
+
     return result
 
 @api_router.post("/documents/batch", response_model=BatchDocumentResponse)
@@ -820,14 +832,21 @@ async def process_documents_batch(request: BatchDocumentRequest):
 async def process_query(request: QueryRequest):
     """Process a cognitive query"""
     logger.info(f"Processing query: {request.query}")
-    
-    stats["total_queries"] += 1
-    
-    result = await run_with_timeout(brain_ai.process_query(request))
-    
-    stats["successful_queries"] += 1
-    stats["total_query_time_ms"] += result.processing_time_ms
-    
+
+    with stats_lock:
+        stats["total_queries"] += 1
+
+    try:
+        result = await run_with_timeout(brain_ai.process_query(request))
+    except Exception:
+        with stats_lock:
+            stats["failed_queries"] += 1
+        raise
+
+    with stats_lock:
+        stats["successful_queries"] += 1
+        stats["total_query_time_ms"] += result.processing_time_ms
+
     return result
 
 @api_router.post("/search", response_model=SearchResponse)

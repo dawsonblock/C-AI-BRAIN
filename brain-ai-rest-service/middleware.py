@@ -7,10 +7,12 @@ Middleware for Brain-AI REST API
 import os
 import time
 import logging
+import threading
+from typing import Callable
+
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -54,46 +56,70 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+_tracker_instance_lock = threading.Lock()
+_tracker_instance = None
+
+
+def get_request_tracker():
+    """Return the live request tracker instance if middleware is active."""
+    with _tracker_instance_lock:
+        return _tracker_instance
+
+
 class RequestTrackingMiddleware(BaseHTTPMiddleware):
     """Middleware to track request metrics"""
-    
+
     def __init__(self, app):
         super().__init__(app)
         self.request_count = 0
         self.error_count = 0
         self.total_latency = 0.0
-    
+        self._lock = threading.Lock()
+
+        global _tracker_instance
+        with _tracker_instance_lock:
+            _tracker_instance = self
+
+        if hasattr(app, "state"):
+            app.state.request_tracker = self
+
     async def dispatch(self, request: Request, call_next: Callable):
         start_time = time.time()
-        self.request_count += 1
-        
+
+        with self._lock:
+            self.request_count += 1
+            request_id = self.request_count
+
         try:
             response = await call_next(request)
-            
-            # Track metrics
-            latency = time.time() - start_time
+        except Exception as exc:
+            with self._lock:
+                self.error_count += 1
+            logger.error("Request failed: %s", exc)
+            raise
+
+        latency = time.time() - start_time
+
+        with self._lock:
             self.total_latency += latency
-            
             if response.status_code >= 400:
                 self.error_count += 1
-            
-            # Add custom headers
-            response.headers["X-Request-ID"] = str(self.request_count)
-            response.headers["X-Processing-Time-Ms"] = str(int(latency * 1000))
-            
-            return response
-            
-        except Exception as e:
-            self.error_count += 1
-            logger.error(f"Request failed: {e}")
-            raise
-    
+
+        response.headers["X-Request-ID"] = str(request_id)
+        response.headers["X-Processing-Time-Ms"] = str(int(latency * 1000))
+
+        return response
+
     def get_stats(self):
-        avg_latency = self.total_latency / self.request_count if self.request_count > 0 else 0
+        with self._lock:
+            total_requests = self.request_count
+            total_errors = self.error_count
+            avg_latency = self.total_latency / total_requests if total_requests > 0 else 0.0
+
         return {
-            "total_requests": self.request_count,
-            "total_errors": self.error_count,
-            "error_rate": self.error_count / self.request_count if self.request_count > 0 else 0,
-            "avg_latency_ms": int(avg_latency * 1000)
+            "total_requests": total_requests,
+            "total_errors": total_errors,
+            "error_rate": total_errors / total_requests if total_requests > 0 else 0.0,
+            "avg_latency_ms": int(avg_latency * 1000),
         }
 
