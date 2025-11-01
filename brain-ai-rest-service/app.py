@@ -771,7 +771,7 @@ async def get_metrics(request: Request):
     
     return PlainTextResponse(content=metrics.export_prometheus(), media_type="text/plain")
 
-@api_router.post("/monitoring/histogram_window", response_model=HistogramConfigResponse)
+@api_router.post("/monitoring/histogram_window", response_model=HistogramConfigResponse, dependencies=[Depends(require_api_key)])
 async def configure_histogram_window(request: HistogramConfigRequest):
     """Adjust histogram rolling window for metrics latency tracking."""
     if metrics is None:
