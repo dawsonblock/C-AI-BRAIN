@@ -22,7 +22,11 @@ RUN adduser --uid 1001 --disabled-password --gecos "" brain
 WORKDIR /srv/app
 COPY brain-ai-rest-service /srv/app/brain-ai-rest-service
 ENV PYTHONPATH=/srv/app/brain-ai-rest-service:${PYTHONPATH}
-COPY --from=builder /opt/build/brain-ai/build/python/brain_ai_core*.so /srv/app/brain-ai-rest-service/
+# Copy the entire python output directory to ensure module availability across platforms
+COPY --from=builder /opt/build/brain-ai/build/python /srv/app/brain-ai-rest-service/python
+# Optionally move/rename to expected location if the app imports from project root
+RUN cp /srv/app/brain-ai-rest-service/python/brain_ai_core*.so /srv/app/brain-ai-rest-service/ || \
+    (echo "brain_ai_core module not found" && exit 1)
 
 RUN pip install --no-cache-dir -r brain-ai-rest-service/requirements.txt
 
