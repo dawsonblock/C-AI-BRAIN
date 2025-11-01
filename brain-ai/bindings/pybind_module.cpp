@@ -122,9 +122,14 @@ void save_index(const std::string &path) {
 }
 
 void load_index(const std::string &path) {
-    auto &manager = ensure_manager();
     std::scoped_lock<std::mutex> lock(g_mutex);
-    manager.load(path);
+    if (!g_manager) {
+        IndexConfig config;
+        config.embedding_dim = kEmbeddingDim;
+        config.auto_save = false;
+        g_manager = std::make_unique<IndexManager>(config);
+    }
+    g_manager->load(path);
 }
 
 PYBIND11_MODULE(brain_ai_core, m) {
