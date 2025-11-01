@@ -104,11 +104,32 @@ std::string sanitize_path(const std::string& raw_path) {
     if (raw_path.empty() || raw_path == "/") {
         return std::string();
     }
+    // Disallow traversal and non-canonical elements
     if (raw_path.find("..") != std::string::npos) {
         throw std::runtime_error("OCR service path must not contain '..'");
     }
-    std::string path = raw_path;
-    // Remove trailing slash for consistency
+    // Disallow backslashes and control characters
+    for (unsigned char c : raw_path) {
+        if (c == '\\' || std::iscntrl(c)) {
+            throw std::runtime_error("OCR service path contains invalid characters");
+        }
+    }
+    // Normalize repeated slashes
+    std::string path;
+    path.reserve(raw_path.size());
+    bool prev_slash = false;
+    for (char c : raw_path) {
+        if (c == '/') {
+            if (!prev_slash) {
+                path.push_back(c);
+                prev_slash = true;
+            }
+        } else {
+            path.push_back(c);
+            prev_slash = false;
+        }
+    }
+    // Remove trailing slash for consistency (except root)
     while (path.size() > 1 && path.back() == '/') {
         path.pop_back();
     }
