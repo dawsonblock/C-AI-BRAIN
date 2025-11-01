@@ -118,19 +118,31 @@ inline std::vector<size_t> get_input_ids_and_check_shapes(const py::object& ids_
         py::array_t < size_t, py::array::c_style | py::array::forcecast > items(ids_);
         auto ids_numpy = items.request();
         // check shapes
-        if (!((ids_numpy.ndim == 1 && ids_numpy.shape[0] == feature_rows) ||
+        if (!((ids_numpy.ndim == 1 && static_cast<size_t>(ids_numpy.shape[0]) == feature_rows) ||
               (ids_numpy.ndim == 0 && feature_rows == 1))) {
             char msg[256];
+            size_t ids_len = (ids_numpy.ndim == 1) ? static_cast<size_t>(ids_numpy.shape[0]) : static_cast<size_t>(ids_numpy.ndim);
             snprintf(msg, sizeof(msg),
-                "The input label shape %d does not match the input data vector shape %d",
-                ids_numpy.ndim, feature_rows);
+                     "Labels shape mismatch: got %zu labels for %zu vectors (ndim=%d).",
+                     ids_len, feature_rows, ids_numpy.ndim);
             throw std::runtime_error(msg);
         }
         // extract data
         if (ids_numpy.ndim == 1) {
-            std::vector<size_t> ids1(ids_numpy.shape[0]);
+            std::vector<size_t> ids1(static_cast<size_t>(ids_numpy.shape[0]));
             for (size_t i = 0; i < ids1.size(); i++) {
                 ids1[i] = items.data()[i];
+            }
+            // ensure uniqueness
+            {
+                std::unordered_set<size_t> uniq;
+                uniq.reserve(ids1.size());
+                for (size_t v : ids1) {
+                    auto [it, inserted] = uniq.insert(v);
+                    if (!inserted) {
+                        throw std::runtime_error("Duplicate labels provided in 'ids'. Labels must be unique.");
+                    }
+                }
             }
             ids.swap(ids1);
         } else if (ids_numpy.ndim == 0) {
