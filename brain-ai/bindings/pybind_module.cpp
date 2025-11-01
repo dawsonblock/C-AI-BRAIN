@@ -39,8 +39,13 @@ std::vector<float> to_vector(const py::object &obj) {
     if (obj.is_none()) {
         return result;
     }
+    result.reserve(kEmbeddingDim);
     for (auto item : py::iter(obj)) {
-        result.push_back(py::cast<float>(item));
+        float v = py::cast<float>(item);
+        if (std::isnan(v) || std::isinf(v)) {
+            throw std::invalid_argument("Embedding contains NaN/Inf values");
+        }
+        result.push_back(v);
     }
     if (!result.empty() && result.size() != kEmbeddingDim) {
         throw std::invalid_argument("Embedding dimension mismatch: expected "
