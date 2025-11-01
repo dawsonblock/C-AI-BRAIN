@@ -156,7 +156,7 @@ jobs:
       - name: Bandit scan
         run: |
           pip install bandit
-          bandit -r brain-ai-rest-service -ll -o bandit.json -f json || true
+          bandit -r brain-ai-rest-service -ll -o bandit.json -f json
 
       - name: Upload Bandit report
         uses: actions/upload-artifact@v4
