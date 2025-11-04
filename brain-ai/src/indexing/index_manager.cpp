@@ -334,10 +334,13 @@ bool IndexManager::load_from(const std::string& path, bool update_default) {
         return false;
     }
     if (!std::filesystem::exists(path)) {
-        // If target doesn't exist, reset to empty state and update default path if requested
-        if (update_default) {
-            config_.index_path = path;
+        // If target doesn't exist and update_default=false, fail without modifying state
+        if (!update_default) {
+            return false;  // Preserve existing index state
         }
+        
+        // If update_default=true, reset to empty state and update default path
+        config_.index_path = path;
         // Reset containers but keep the same IndexManager instance
         documents_.clear();
         // Recreate HNSW index with current config safely
@@ -350,7 +353,7 @@ bool IndexManager::load_from(const std::string& path, bool update_default) {
         );
         index_->set_ef_search(config_.ef_search);
         stats_ = IndexStats{};
-        return true;
+        return false;
     }
 
     // Backup existing state before destroying it
