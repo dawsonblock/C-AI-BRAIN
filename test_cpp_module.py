@@ -4,6 +4,13 @@ import os
 import sys
 import traceback
 
+if __name__ != "__main__":
+    import pytest
+
+    pytest.importorskip(
+        "brain_ai_core", reason="brain_ai_core extension not installed in test environment"
+    )
+
 # Add brain-ai-rest-service to path using relative path from script location
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(script_dir, 'brain-ai-rest-service'))
