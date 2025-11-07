@@ -6,9 +6,9 @@ import ast
 import logging
 import math
 import os
-import subprocess
-import tempfile
 from typing import Dict, Optional
+
+import requests
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,9 +83,11 @@ def safe_code_sandbox(
 ) -> Dict[str, object]:
     """
     Execute code in a sandboxed environment with resource limits.
-    
-    WARNING: This is a basic sandbox. For production, use proper containerization
-    (Docker, gVisor, etc.) or a dedicated code execution service.
+
+    The service no longer executes code locally. A vetted remote sandbox (for
+    example, a Firecracker-based microVM fleet or an internal hardened executor
+    API) must be provided via the ``HARDENED_SANDBOX_URL`` environment variable.
+    When that endpoint is unavailable, the sandbox call is rejected.
     
     Args:
         code: Source code to execute
@@ -101,7 +103,21 @@ def safe_code_sandbox(
     
     # Security checks
     if os.getenv("ENABLE_CODE_SANDBOX", "false").lower() != "true":
-        return {"error": "Code sandbox disabled for security"}
+        return {
+            "error": (
+                "Code sandbox disabled. Set ENABLE_CODE_SANDBOX=true and configure a"
+                " hardened remote executor."
+            )
+        }
+
+    executor_url = os.getenv("HARDENED_SANDBOX_URL")
+    if not executor_url:
+        return {
+            "error": (
+                "No hardened sandbox executor configured. Set HARDENED_SANDBOX_URL"
+                " to a vetted remote execution service."
+            )
+        }
     
     # Forbidden imports/functions
     forbidden_patterns = [
@@ -122,42 +138,46 @@ def safe_code_sandbox(
             return {"error": f"Forbidden pattern detected: {pattern}"}
     
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Write code to temp file
-            code_file = os.path.join(tmpdir, "script.py")
-            with open(code_file, "w") as f:
-                f.write(code)
-            
-            # Execute with resource limits (Linux only)
-            # Use subprocess.run with timeout
-            # Note: For production, add ulimit via shell wrapper or use resource.setrlimit
-            result = subprocess.run(
-                ["python3", code_file],
-                capture_output=True,
-                timeout=timeout,
-                cwd=tmpdir,
-                env={
-                    "PATH": "/usr/bin:/bin",
-                    "PYTHONDONTWRITEBYTECODE": "1",
-                },
-            )
-            
-            stdout = result.stdout.decode("utf-8", errors="replace")[:max_output_bytes]
-            stderr = result.stderr.decode("utf-8", errors="replace")[:max_output_bytes]
-            
-            return {
-                "stdout": stdout,
-                "stderr": stderr,
-                "returncode": result.returncode,
-                "success": result.returncode == 0,
-            }
-            
-    except subprocess.TimeoutExpired:
-        LOGGER.warning("Code execution timeout after %ds", timeout)
+        response = requests.post(
+            executor_url,
+            json={
+                "code": code,
+                "language": language,
+                "timeout": timeout,
+                "max_output_bytes": max_output_bytes,
+            },
+            timeout=max(timeout + 2, 5),
+        )
+        response.raise_for_status()
+    except requests.Timeout:
+        LOGGER.warning("Remote sandbox execution timeout after %ds", timeout)
         return {"error": f"Execution timeout ({timeout}s)"}
-    except Exception as e:
-        LOGGER.error("Code sandbox error: %s", e)
-        return {"error": f"Sandbox error: {e}"}
+    except requests.RequestException as exc:
+        LOGGER.error("Remote sandbox request failed: %s", exc)
+        return {"error": f"Sandbox executor error: {exc}"}
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        LOGGER.error("Invalid JSON payload from sandbox executor: %s", exc)
+        return {"error": "Sandbox executor returned invalid JSON"}
+
+    # Ensure output limits are respected even if the executor does not enforce them strictly
+    stdout = str(payload.get("stdout", ""))[:max_output_bytes]
+    stderr = str(payload.get("stderr", ""))[:max_output_bytes]
+    returncode = payload.get("returncode")
+    success = payload.get("success")
+
+    if returncode is None:
+        LOGGER.error("Sandbox executor response missing returncode field")
+        return {"error": "Sandbox executor response malformed"}
+
+    return {
+        "stdout": stdout,
+        "stderr": stderr,
+        "returncode": returncode,
+        "success": bool(success) if success is not None else (returncode == 0),
+    }
 
 
 def verify_answer(
