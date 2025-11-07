@@ -1,0 +1,193 @@
+version: '3.9'
+
+services:
+  # Main AI REST service
+  brain-ai-rest:
+    build:
+      context: ./brain-ai-rest-service
+      dockerfile: Dockerfile
+    image: brain-ai-rest-service:latest
+    container_name: brain-ai-rest
+    restart: unless-stopped
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined  # Adjust to custom seccomp profile in production
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # User
+    user: "1000:1000"
+    
+    # Init process
+    init: true
+    
+    # Ports
+    ports:
+      - "8000:8000"
+    
+    # Environment
+    environment:
+      - API_KEY=${API_KEY:-change-me-in-production}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - DB_PATH=/data/brain_ai.db
+      - EMBEDDING_BACKEND=${EMBEDDING_BACKEND:-cpu}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=true
+      - ENVIRONMENT=production
+      - METRICS_ENABLED=true
+      - RATE_LIMIT_ENABLED=true
+    
+    # Volumes
+    volumes:
+      - brain-ai-data:/data
+      - brain-ai-tmp:/tmp
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Networking
+    networks:
+      - brain-ai-network
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # OCR service
+  deepseek-ocr:
+    build:
+      context: ./deepseek-ocr-service
+      dockerfile: Dockerfile
+    image: deepseek-ocr-service:latest
+    container_name: deepseek-ocr
+    restart: unless-stopped
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    
+    # User
+    user: "1001:1001"
+    
+    # Init process
+    init: true
+    
+    # Ports
+    ports:
+      - "8001:8001"
+    
+    # Environment
+    environment:
+      - TMPDIR=/tmp/ocr
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    
+    # Volumes
+    volumes:
+      - ocr-tmp:/tmp/ocr
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Networking
+    networks:
+      - brain-ai-network
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Prometheus for metrics (uncomment if needed)
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: prometheus
+  #   restart: unless-stopped
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus-data:/prometheus
+  #   networks:
+  #     - brain-ai-network
+
+  # Optional: Grafana for visualization (uncomment if needed)
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: grafana
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+  #   networks:
+  #     - brain-ai-network
+
+networks:
+  brain-ai-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  brain-ai-data:
+    driver: local
+  brain-ai-tmp:
+    driver: local
+  ocr-tmp:
+    driver: local
+  # prometheus-data:
+  #   driver: local
+  # grafana-data:
+  #   driver: local
