@@ -13,7 +13,6 @@ ALLOWED_NODES: Set[type] = {
     ast.Expression,
     ast.BinOp,
     ast.UnaryOp,
-    ast.Num,
     ast.Constant,
     ast.Add,
     ast.Sub,
@@ -27,6 +26,8 @@ ALLOWED_NODES: Set[type] = {
     ast.Load,
     ast.Call,
     ast.Name,
+    ast.Attribute,
+    ast.List,
 }
 
 # Allowed mathematical functions
@@ -112,6 +113,10 @@ def validate_ast_node(node: ast.AST) -> None:
                     raise SafeEvaluationError(
                         f"Name assignment not allowed: {name}"
                     )
+
+        # Disallow attribute access
+        if isinstance(n, ast.Attribute):
+            raise SafeEvaluationError("Attribute access is not allowed")
 
 
 def safe_eval(expression: str) -> float:
