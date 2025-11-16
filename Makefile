@@ -9,6 +9,17 @@ help: ## Show this help message
 build: ## Build Docker images
 	docker compose build
 
+build-multi-arch: ## Build multi-arch Docker images (amd64, arm64)
+	@echo "Building multi-arch images (linux/amd64,linux/arm64)"
+	docker buildx build --platform linux/amd64,linux/arm64 -t brain-ai-rest-service:latest ./brain-ai-rest-service
+	docker buildx build --platform linux/amd64,linux/arm64 -t deepseek-ocr-service:latest ./deepseek-ocr-service
+
+sbom: ## Generate SBOMs for built images (requires docker sbom plugin)
+	@echo "Generating SBOM for brain-ai-rest-service:latest"
+	docker sbom brain-ai-rest-service:latest > sbom-brain-ai-rest.spdx || true
+	@echo "Generating SBOM for deepseek-ocr-service:latest"
+	docker sbom deepseek-ocr-service:latest > sbom-deepseek-ocr.spdx || true
+
 up: ## Start all services
 	docker compose up -d
 
