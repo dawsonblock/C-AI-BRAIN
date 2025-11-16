@@ -55,6 +55,34 @@ class QueryResponse(BaseModel):
     success: bool
     results: List[QueryResult] = Field(default_factory=list)
     query_time_ms: float
+    answer: Optional[str] = Field(default=None, description="Optional LLM-generated answer")
+
+
+class ChatMessage(BaseModel):
+    """Single chat message for LLM interactions."""
+    role: str = Field(..., description="Role in the conversation (e.g. user, assistant, system)")
+    content: str = Field(..., min_length=1, max_length=10_000, description="Message content")
+
+
+class ChatRequest(BaseModel):
+    """Chat request routed to the configured LLM backend."""
+    messages: List[ChatMessage] = Field(..., description="Ordered list of chat messages")
+    provider: Optional[str] = Field(
+        default=None,
+        description="Optional override for LLM provider; defaults to server configuration",
+    )
+
+
+class ChatResponse(BaseModel):
+    """Chat response from the LLM router."""
+    success: bool
+    provider: str = Field(..., description="LLM provider that handled the request")
+    answer: Optional[str] = Field(default=None, description="Primary answer text from the LLM")
+    raw: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Raw backend response payload (for debugging/advanced clients)",
+    )
+    error: Optional[str] = Field(default=None, description="Error message if the call failed")
 
 
 class CalculateRequest(BaseModel):

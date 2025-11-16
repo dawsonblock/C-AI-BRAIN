@@ -3,7 +3,7 @@
 import time
 import logging
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -27,6 +27,8 @@ from .models import (
     IndexResponse,
     QueryRequest,
     QueryResponse,
+    ChatRequest,
+    ChatResponse,
     CalculateRequest,
     CalculateResponse,
     ErrorResponse,
@@ -34,10 +36,27 @@ from .models import (
 from .security import safe_eval, SafeEvaluationError
 from .database import initialize_database, get_db_pool
 from .metrics import generate_metrics, record_document_indexed, record_query, record_calculation
+from .llm_router import llm_chat, LLMRouterError
 
 # Setup logging
 setup_logging(log_level=settings.log_level, json_logs=settings.log_json)
 logger = logging.getLogger(__name__)
+
+
+def _extract_llm_answer(payload: Dict[str, Any]) -> Optional[str]:
+    """Best-effort extraction of answer content from an LLM payload."""
+    try:
+        choices = payload.get("choices")
+        if not choices:
+            return None
+        first = choices[0] or {}
+        message = first.get("message") or {}
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+    except Exception:
+        return None
+    return None
 
 
 @asynccontextmanager
@@ -251,11 +270,31 @@ async def query_documents(request: Any, payload: QueryRequest) -> QueryResponse:
         record_query()
         
         query_time_ms = (time.time() - start_time) * 1000
+
+        answer: Optional[str] = None
+        # Only attempt LLM answer generation outside of test environment
+        if settings.environment != "test":
+            try:
+                messages: List[Dict[str, str]] = [
+                    {
+                        "role": "system",
+                        "content": "You are a helpful assistant that answers user queries.",
+                    },
+                    {
+                        "role": "user",
+                        "content": payload.query,
+                    },
+                ]
+                raw = await llm_chat(messages)
+                answer = _extract_llm_answer(raw)
+            except LLMRouterError as exc:
+                logger.warning("LLM answer generation failed", extra={"error": str(exc)})
         
         return QueryResponse(
             success=True,
             results=[],
-            query_time_ms=query_time_ms
+            query_time_ms=query_time_ms,
+            answer=answer,
         )
     except Exception as e:
         logger.error(f"Failed to process query: {e}", exc_info=True)
@@ -309,6 +348,40 @@ async def calculate(request: Any, payload: CalculateRequest) -> CalculateRespons
         raise HTTPException(
             status_code=500,
             detail="Calculation failed"
+        )
+
+
+@app.post(
+    "/chat",
+    response_model=ChatResponse,
+    tags=["LLM"],
+    dependencies=[Depends(require_api_key)],
+)
+@limiter.limit("100/minute")
+async def chat(request: Any, payload: ChatRequest) -> ChatResponse:
+    provider = payload.provider or settings.llm_provider
+    logger.info("Handling chat request", extra={"provider": provider})
+
+    try:
+        raw = await llm_chat(
+            [m.model_dump() for m in payload.messages],
+            provider=payload.provider,
+        )
+        answer = _extract_llm_answer(raw)
+        return ChatResponse(
+            success=True,
+            provider=provider,
+            answer=answer,
+            raw=raw,
+        )
+    except LLMRouterError as exc:
+        logger.warning("LLM chat failed", extra={"error": str(exc)})
+        return ChatResponse(
+            success=False,
+            provider=provider,
+            answer=None,
+            raw=None,
+            error=str(exc),
         )
 
 
