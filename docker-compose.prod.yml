@@ -1,0 +1,129 @@
+version: '3.9'
+
+services:
+  brain-ai-rest:
+    image: brain-ai-rest-service:${BRAIN_AI_TAG:-latest}
+    container_name: brain-ai-rest
+    restart: unless-stopped
+
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    user: "1000:1000"
+    init: true
+
+    # In production, typically exposed via a reverse proxy / ingress,
+    # so no host port binding is defined here.
+
+    environment:
+      - API_KEY=${API_KEY}
+      - API_KEYS=${API_KEYS:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - DB_PATH=/data/brain_ai.db
+      - EMBEDDING_BACKEND=${EMBEDDING_BACKEND:-cpu}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=true
+      - ENVIRONMENT=production
+      - METRICS_ENABLED=${METRICS_ENABLED:-true}
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
+
+    volumes:
+      - brain-ai-data:/data
+      - brain-ai-tmp:/tmp
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - brain-ai-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  deepseek-ocr:
+    image: deepseek-ocr-service:${DEEPSEEK_OCR_TAG:-latest}
+    container_name: deepseek-ocr
+    restart: unless-stopped
+
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+    user: "1001:1001"
+    init: true
+
+    # No host port binding here; expect exposure via reverse proxy / ingress.
+
+    environment:
+      - TMPDIR=/tmp/ocr
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    volumes:
+      - ocr-tmp:/tmp/ocr
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - brain-ai-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  brain-ai-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  brain-ai-data:
+    driver: local
+  brain-ai-tmp:
+    driver: local
+  ocr-tmp:
+    driver: local

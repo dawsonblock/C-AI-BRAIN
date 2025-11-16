@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     embedding_backend: str = os.getenv("EMBEDDING_BACKEND", "cpu")
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     embedding_dimensions: int = 384
+    deepseek_api_base: str = os.getenv("DEEPSEEK_API_BASE", "")
+    deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
+    deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    deepseek_chat_path: str = os.getenv("DEEPSEEK_CHAT_PATH", "/v1/chat/completions")
+    deepseek_timeout_seconds: float = float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "30"))
+    deepseek_max_retries: int = int(os.getenv("DEEPSEEK_MAX_RETRIES", "3"))
+    llm_provider: str = os.getenv("LLM_PROVIDER", "deepseek")
     
     # Metrics
     metrics_enabled: bool = True
